@@ -1,4 +1,4 @@
-package clash
+package goClash
 
 /*
 #cgo CFLAGS: -x objective-c
@@ -27,27 +27,26 @@ import (
 	"github.com/Dreamacro/clash/hub/route"
 	"github.com/Dreamacro/clash/log"
 	"github.com/Dreamacro/clash/tunnel/statistic"
-
 	"github.com/oschwald/geoip2-golang"
 	"github.com/phayes/freeport"
 )
 
 var secretOverride string = ""
 
-func IsAddrValid(addr string) bool {
+func isAddrValid(addr string) bool {
 	if addr != "" {
 		comps := strings.Split(addr, ":")
 		v := comps[len(comps)-1]
 		if port, err := strconv.Atoi(v); err == nil {
 			if port > 0 && port < 65535 {
-				return CheckPortAvailable(port)
+				return checkPortAvailable(port)
 			}
 		}
 	}
 	return false
 }
 
-func CheckPortAvailable(port int) bool {
+func checkPortAvailable(port int) bool {
 	if port < 1 || port > 65534 {
 		return false
 	}
@@ -70,13 +69,13 @@ func CheckPortAvailable(port int) bool {
 	return true
 }
 
-//export InitClashCore
-func InitClashCore() {
+//export initClashCore
+func initClashCore() {
 	configFile := filepath.Join(constant.Path.HomeDir(), constant.Path.Config())
 	constant.SetConfig(configFile)
 }
 
-func ReadConfig(path string) ([]byte, error) {
+func readConfig(path string) ([]byte, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil, err
 	}
@@ -90,8 +89,8 @@ func ReadConfig(path string) ([]byte, error) {
 	return data, err
 }
 
-func GetRawCfg() (*config.RawConfig, error) {
-	buf, err := ReadConfig(constant.Path.Config())
+func getRawCfg() (*config.RawConfig, error) {
+	buf, err := readConfig(constant.Path.Config())
 	if err != nil {
 		return nil, err
 	}
@@ -99,8 +98,8 @@ func GetRawCfg() (*config.RawConfig, error) {
 	return config.UnmarshalRawConfig(buf)
 }
 
-func ParseDefaultConfigThenStart(checkPort, allowLan bool, proxyPort uint32, externalController string) (*config.Config, error) {
-	rawCfg, err := GetRawCfg()
+func parseDefaultConfigThenStart(checkPort, allowLan bool, proxyPort uint32, externalController string) (*config.Config, error) {
+	rawCfg, err := getRawCfg()
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +142,7 @@ func ParseDefaultConfigThenStart(checkPort, allowLan bool, proxyPort uint32, ext
 		rawCfg.ExternalController = externalController
 	}
 	if checkPort {
-		if !IsAddrValid(rawCfg.ExternalController) {
+		if !isAddrValid(rawCfg.ExternalController) {
 			port, err := freeport.GetFreePort()
 			if err != nil {
 				return nil, err
@@ -153,7 +152,7 @@ func ParseDefaultConfigThenStart(checkPort, allowLan bool, proxyPort uint32, ext
 		}
 		rawCfg.AllowLan = allowLan
 
-		if !CheckPortAvailable(rawCfg.MixedPort) {
+		if !checkPortAvailable(rawCfg.MixedPort) {
 			if port, err := freeport.GetFreePort(); err == nil {
 				rawCfg.MixedPort = port
 			}
@@ -169,8 +168,8 @@ func ParseDefaultConfigThenStart(checkPort, allowLan bool, proxyPort uint32, ext
 	return cfg, nil
 }
 
-//export VerifyClashConfig
-func VerifyClashConfig(content *C.char) *C.char {
+//export verifyClashConfig
+func verifyClashConfig(content *C.char) *C.char {
 
 	b := []byte(C.GoString(content))
 	cfg, err := executor.ParseWithBytes(b)
@@ -184,8 +183,8 @@ func VerifyClashConfig(content *C.char) *C.char {
 	return C.CString("success")
 }
 
-//export ClashSetupLogger
-func ClashSetupLogger() {
+//export clashSetupLogger
+func clashSetupLogger() {
 	sub := log.Subscribe()
 	go func() {
 		for elm := range sub {
@@ -199,8 +198,8 @@ func ClashSetupLogger() {
 	}()
 }
 
-//export ClashSetupTraffic
-func ClashSetupTraffic() {
+//export clashSetupTraffic
+func clashSetupTraffic() {
 	go func() {
 		tick := time.NewTicker(time.Second)
 		defer tick.Stop()
@@ -214,9 +213,9 @@ func ClashSetupTraffic() {
 	}()
 }
 
-//export Clash_checkSecret
-func Clash_checkSecret() *C.char {
-	cfg, err := GetRawCfg()
+//export clash_checkSecret
+func clash_checkSecret() *C.char {
+	cfg, err := getRawCfg()
 	if err != nil {
 		return C.CString("")
 	}
@@ -226,14 +225,14 @@ func Clash_checkSecret() *C.char {
 	return C.CString("")
 }
 
-//export Clash_setSecret
-func Clash_setSecret(secret *C.char) {
+//export clash_setSecret
+func clash_setSecret(secret *C.char) {
 	secretOverride = C.GoString(secret)
 }
 
-//export Run
-func Run(checkConfig, allowLan bool, portOverride uint32, externalController *C.char) *C.char {
-	cfg, err := ParseDefaultConfigThenStart(checkConfig, allowLan, portOverride, C.GoString(externalController))
+//export run
+func run(checkConfig, allowLan bool, portOverride uint32, externalController *C.char) *C.char {
+	cfg, err := parseDefaultConfigThenStart(checkConfig, allowLan, portOverride, C.GoString(externalController))
 	if err != nil {
 		return C.CString(err.Error())
 	}
@@ -251,13 +250,13 @@ func Run(checkConfig, allowLan bool, portOverride uint32, externalController *C.
 	return C.CString(string(jsonString))
 }
 
-//export SetUIPath
-func SetUIPath(path *C.char) {
+//export setUIPath
+func setUIPath(path *C.char) {
 	route.SetUIPath(C.GoString(path))
 }
 
-//export ClashUpdateConfig
-func ClashUpdateConfig(path *C.char) *C.char {
+//export clashUpdateConfig
+func clashUpdateConfig(path *C.char) *C.char {
 	cfg, err := executor.ParseWithPath(C.GoString(path))
 	if err != nil {
 		return C.CString(err.Error())
@@ -266,8 +265,8 @@ func ClashUpdateConfig(path *C.char) *C.char {
 	return C.CString("success")
 }
 
-//export ClashGetConfigs
-func ClashGetConfigs() *C.char {
+//export clashGetConfigs
+func clashGetConfigs() *C.char {
 	general := executor.GetGeneral()
 	jsonString, err := json.Marshal(general)
 	if err != nil {
@@ -276,8 +275,8 @@ func ClashGetConfigs() *C.char {
 	return C.CString(string(jsonString))
 }
 
-//export VerifyGEOIPDataBase
-func VerifyGEOIPDataBase() bool {
+//export verifyGEOIPDataBase
+func verifyGEOIPDataBase() bool {
 	mmdb, err := geoip2.Open(constant.Path.MMDB())
 	if err != nil {
 		log.Warnln("mmdb fail:%s", err.Error())
@@ -292,8 +291,8 @@ func VerifyGEOIPDataBase() bool {
 	return true
 }
 
-//export Clash_closeAllConnections
-func Clash_closeAllConnections() {
+//export clash_closeAllConnections
+func clash_closeAllConnections() {
 	snapshot := statistic.DefaultManager.Snapshot()
 	for _, c := range snapshot.Connections {
 		c.Close()
@@ -302,94 +301,3 @@ func Clash_closeAllConnections() {
 
 func main() {
 }
-
-// var (
-// 	flagset            map[string]bool
-// 	version            bool
-// 	testConfig         bool
-// 	homeDir            string
-// 	configFile         string
-// 	externalUI         string
-// 	externalController string
-// 	secret             string
-// )
-
-// func init() {
-// 	flag.StringVar(&homeDir, "d", "", "set configuration directory")
-// 	flag.StringVar(&configFile, "f", "", "specify configuration file")
-// 	flag.StringVar(&externalUI, "ext-ui", "", "override external ui directory")
-// 	flag.StringVar(&externalController, "ext-ctl", "", "override external controller address")
-// 	flag.StringVar(&secret, "secret", "", "override secret for RESTful API")
-// 	flag.BoolVar(&version, "v", false, "show current version of clash")
-// 	flag.BoolVar(&testConfig, "t", false, "test configuration and exit")
-// 	flag.Parse()
-
-// 	flagset = map[string]bool{}
-// 	flag.Visit(func(f *flag.Flag) {
-// 		flagset[f.Name] = true
-// 	})
-// }
-
-// func main() {
-
-// }
-
-// func main() {
-// 	maxprocs.Set(maxprocs.Logger(func(string, ...any) {}))
-// 	if version {
-// 		fmt.Printf("Clash %s %s %s with %s %s\n", C.Version, runtime.GOOS, runtime.GOARCH, runtime.Version(), C.BuildTime)
-// 		return
-// 	}
-
-// 	if homeDir != "" {
-// 		if !filepath.IsAbs(homeDir) {
-// 			currentDir, _ := os.Getwd()
-// 			homeDir = filepath.Join(currentDir, homeDir)
-// 		}
-// 		C.SetHomeDir(homeDir)
-// 	}
-
-// 	if configFile != "" {
-// 		if !filepath.IsAbs(configFile) {
-// 			currentDir, _ := os.Getwd()
-// 			configFile = filepath.Join(currentDir, configFile)
-// 		}
-// 		C.SetConfig(configFile)
-// 	} else {
-// 		configFile := filepath.Join(C.Path.HomeDir(), C.Path.Config())
-// 		C.SetConfig(configFile)
-// 	}
-
-// 	if err := config.Init(C.Path.HomeDir()); err != nil {
-// 		log.Fatalln("Initial configuration directory error: %s", err.Error())
-// 	}
-
-// 	if testConfig {
-// 		if _, err := executor.Parse(); err != nil {
-// 			log.Errorln(err.Error())
-// 			fmt.Printf("configuration file %s test failed\n", C.Path.Config())
-// 			os.Exit(1)
-// 		}
-// 		fmt.Printf("configuration file %s test is successful\n", C.Path.Config())
-// 		return
-// 	}
-
-// 	var options []hub.Option
-// 	if flagset["ext-ui"] {
-// 		options = append(options, hub.WithExternalUI(externalUI))
-// 	}
-// 	if flagset["ext-ctl"] {
-// 		options = append(options, hub.WithExternalController(externalController))
-// 	}
-// 	if flagset["secret"] {
-// 		options = append(options, hub.WithSecret(secret))
-// 	}
-
-// 	if err := hub.Parse(options...); err != nil {
-// 		log.Fatalln("Parse config error: %s", err.Error())
-// 	}
-
-// 	sigCh := make(chan os.Signal, 1)
-// 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-// 	<-sigCh
-// }
