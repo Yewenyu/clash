@@ -35,4 +35,6 @@ docs/.vitepress/cache
 # docs site build files
 docs/.vitepress/dist
 
-framework
+framework/framework
+framework/VPNKit
+framework/Example
