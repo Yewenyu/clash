@@ -34,9 +34,11 @@ docs/.vitepress/cache
 
 # docs site build files
 docs/.vitepress/dist
-goClash/goClash.a
-goClash/goClash.h
+
+framework/framework
+framework/VPNKit
+framework/Example
 cache.db
 clash
-.vscode/launch.json
 Country.mmdb
+.vscode/launch.json
