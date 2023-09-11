@@ -1,11 +1,10 @@
-module clash
+module framework
 
 go 1.21.0
 
-replace github.com/Dreamacro/clash v1.17.0 => ../
+require github.com/Dreamacro/clash v1.17.0
 
 require (
-	github.com/Dreamacro/clash v1.17.0 // indirect
 	github.com/Dreamacro/protobytes v0.0.0-20230617041236-6500a9f4f158 // indirect
 	github.com/ajg/form v1.5.1 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
@@ -41,3 +40,5 @@ require (
 	golang.org/x/tools v0.13.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/Dreamacro/clash v1.17.0 => ../

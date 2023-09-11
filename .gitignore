@@ -42,3 +42,4 @@ cache.db
 clash
 Country.mmdb
 .vscode/launch.json
+go.work.sum
