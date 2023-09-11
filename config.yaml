@@ -80,6 +80,20 @@ mode: rule
   # persistence fakeip
   # store-fake-ip: false
 
+# interface-name: en1 # conflict with `tun.auto-detect-interface`
+
+tun:
+  enable: true
+  stack: system # or gvisor
+  # dns-hijack:
+  #   - 8.8.8.8:53
+  #   - tcp://8.8.8.8:53
+  #   - any:53
+  #   - tcp://any:53
+  auto-route: true # manage `ip route` and `ip rules`
+  auto-redir: true # manage nftable REDIRECT
+  auto-detect-interface: true # conflict with `interface-name`
+
 # DNS server settings
 # This section is optional. When not present, the DNS server will be disabled.
 dns:
@@ -150,6 +164,7 @@ dns:
   #   'www.baidu.com': '114.114.114.114'
   #   '+.internal.crop.com': '10.0.0.1'
 
+
 proxies:
   # Shadowsocks
   # The supported ciphers (encryption methods):
@@ -161,9 +176,9 @@ proxies:
   - name: "ss1"
     type: ss
     server: 61.195.97.240
-    port: 48657
+    port: 46205
     cipher: aes-256-gcm
-    password: "TjauC7a168368YGW"
+    password: "8jsEF0F2Tt8399FS"
     # udp: true
 
 

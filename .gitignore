@@ -36,3 +36,7 @@ docs/.vitepress/cache
 docs/.vitepress/dist
 goClash/goClash.a
 goClash/goClash.h
+cache.db
+clash
+.vscode/launch.json
+Country.mmdb

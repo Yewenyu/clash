@@ -1,1 +1,0 @@
-python3 build_clash_universal.py
