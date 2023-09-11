@@ -59,6 +59,8 @@ func main() {
 		}
 		C.SetHomeDir(homeDir)
 	}
+	currentPath, _ := os.Getwd() // 获取当前路径
+	C.SetHomeDir(currentPath)
 
 	if configFile != "" {
 		if !filepath.IsAbs(configFile) {

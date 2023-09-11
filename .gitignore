@@ -38,3 +38,8 @@ docs/.vitepress/dist
 framework/framework
 framework/VPNKit
 framework/Example
+cache.db
+clash
+Country.mmdb
+.vscode/launch.json
+go.work.sum

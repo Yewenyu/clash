@@ -7,7 +7,7 @@ sidebarOrder: 5
 
 Clash Premium implements the Scripting feature powered by Python3, enableing users to programmatically select policies for the packets with dynamic flexibility.
 
-You can either controll the entire rule-matching engine with a single Python script, or define a number of shortcuts and use them in companion with the regular rules. This page refers to the first feature, for the latter, see [Script Shortcuts](./script-shortcuts.md).
+You can either control the entire rule-matching engine with a single Python script, or define a number of shortcuts and use them in companion with the regular rules. This page refers to the first feature, for the latter, see [Script Shortcuts](./script-shortcuts.md).
 
 ## Scripting the entire rule-matching engine
 
@@ -18,9 +18,10 @@ mode: Script
 script:
   code: |
     def main(ctx, metadata):
-      ip = metadata["dst_ip"] = ctx.resolve_ip(metadata["host"])
+      ip = ctx.resolve_ip(metadata["host"])
       if ip == "":
         return "DIRECT"
+      metadata["dst_ip"] = ip
 
       code = ctx.geoip(ip)
       if code == "LAN" or code == "CN":
@@ -56,6 +57,7 @@ interface Metadata {
   src_port: string
   dst_ip: string
   dst_port: string
+  inbound_port: number
 }
 
 interface Context {

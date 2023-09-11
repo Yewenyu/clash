@@ -368,7 +368,7 @@ The request to the same eTLD+1 will be dialed with the same proxy.
 
 ### select
 
-The first server is by default used when Clash starts up. Users can choose the server to use with the RESTful API. In this mode, you can hardcode servers in the config or use [Proxy Providers](/configuration/outbound#proxy-providers).
+The first server is by default used when Clash starts up. Users can choose the server to use with the RESTful API. In this mode, you can hardcode servers in the config or use [Proxy Providers](#proxy-providers).
 
 Either way, sometimes you might as well just route packets with a direct connection. In this case, you can use the `DIRECT` outbound.
 
