@@ -87,7 +87,7 @@ func CloseAllConnections() {
 }
 
 func CustomLogFile(logPath string) {
-	// log.CustomLogPath(logPath)
+	log.CustomLogPath(logPath)
 }
 
 func main() {
