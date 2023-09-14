@@ -1,4 +1,4 @@
-module framework
+module clash
 
 go 1.21.0
 

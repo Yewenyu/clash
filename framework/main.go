@@ -1,4 +1,4 @@
-package framework
+package clash
 
 /*
 #cgo CFLAGS: -x objective-c
@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"runtime/debug"
 
 	"github.com/Dreamacro/clash/config"
 	"github.com/Dreamacro/clash/constant"
@@ -88,6 +89,13 @@ func CloseAllConnections() {
 
 func CustomLogFile(logPath string) {
 	log.CustomLogPath(logPath)
+}
+
+func SetGCPrecent(v int) {
+	debug.SetGCPercent(v)
+}
+func FreeOSMemory() {
+	debug.FreeOSMemory()
 }
 
 func main() {
