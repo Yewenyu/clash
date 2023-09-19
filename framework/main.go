@@ -89,7 +89,8 @@ func CloseAllConnections() {
 
 /*
 *
-PanicLevel Level = iota 0
+
+	PanicLevel Level = iota 0
 
 	// FatalLevel level. Logs and then calls `logger.Exit(1)`. It will exit even if the
 	// logging level is set to Panic.
