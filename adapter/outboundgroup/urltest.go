@@ -3,6 +3,7 @@ package outboundgroup
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/Dreamacro/clash/adapter/outbound"
@@ -10,6 +11,7 @@ import (
 	"github.com/Dreamacro/clash/component/dialer"
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/constant/provider"
+	"github.com/Dreamacro/clash/log"
 )
 
 type urlTestOption func(*URLTest)
@@ -65,6 +67,8 @@ func (u *URLTest) proxies(touch bool) []C.Proxy {
 	return elm.([]C.Proxy)
 }
 
+var isFirstTest = true
+
 func (u *URLTest) fast(touch bool) C.Proxy {
 	elm, _, shared := u.fastSingle.Do(func() (any, error) {
 		proxies := u.proxies(touch)
@@ -72,16 +76,19 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		min := fast.LastDelay()
 		fastNotExist := true
 
+		logString := "url-test:"
+		logString += fmt.Sprintf("<%s,%d>", fast.Addr(), min)
 		for _, proxy := range proxies[1:] {
 			if u.fastNode != nil && proxy.Name() == u.fastNode.Name() {
 				fastNotExist = false
 			}
 
+			delay := proxy.LastDelay()
+			logString += fmt.Sprintf("<%s,%d>", proxy.Addr(), delay)
 			if !proxy.Alive() {
 				continue
 			}
 
-			delay := proxy.LastDelay()
 			if delay < min {
 				fast = proxy
 				min = delay
@@ -91,6 +98,11 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		// tolerance
 		if u.fastNode == nil || fastNotExist || !u.fastNode.Alive() || u.fastNode.LastDelay() > fast.LastDelay()+u.tolerance {
 			u.fastNode = fast
+		}
+		if isFirstTest {
+			isFirstTest = false
+			logString += fmt.Sprintf("<fast:%s>", u.fastNode.Addr())
+			log.Infoln("%s", logString)
 		}
 
 		return u.fastNode, nil

@@ -87,8 +87,30 @@ func CloseAllConnections() {
 	}
 }
 
-func CustomLogFile(logPath string) {
-	log.CustomLogPath(logPath)
+/*
+*
+PanicLevel Level = iota 0
+
+	// FatalLevel level. Logs and then calls `logger.Exit(1)`. It will exit even if the
+	// logging level is set to Panic.
+	FatalLevel 1
+	// ErrorLevel level. Logs. Used for errors that should definitely be noted.
+	// Commonly used for hooks to send errors to an error tracking service.
+	ErrorLevel 2
+	// WarnLevel level. Non-critical entries that deserve eyes.
+	WarnLevel 3
+	// InfoLevel level. General operational entries about what's going on inside the
+	// application.
+	InfoLevel 4
+	// DebugLevel level. Usually only enabled when debugging. Very verbose logging.
+	DebugLevel 5
+	// TraceLevel level. Designates finer-grained informational events than the Debug.
+	TraceLevel 6
+
+*
+*/
+func CustomLogFile(logPath string, level int) {
+	log.CustomLogPath(logPath, level)
 }
 
 func SetGCPrecent(v int) {

@@ -100,8 +100,8 @@ func newLog(logLevel LogLevel, format string, v ...any) Event {
 	}
 }
 
-func CustomLogPath(logPath string) {
-	var logFilePath = fmt.Sprintf("%s%s", logPath, "/clash.log")
+func CustomLogPath(logPath string, level int) {
+	var logFilePath = logPath
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	// 	newlog := log.New()
 
@@ -114,5 +114,5 @@ func CustomLogPath(logPath string) {
 	// defer logFile.Close()
 
 	log.SetOutput(logFile)
-	log.SetLevel(log.TraceLevel)
+	log.SetLevel(log.Level(level))
 }

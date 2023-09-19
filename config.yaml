@@ -36,7 +36,7 @@ mode: rule
 
 # Clash by default prints logs to STDOUT
 # info / warning / error / debug / silent
-# log-level: info
+log-level: debug
 
 # When set to false, resolver won't translate hostnames to IPv6 addresses
 # ipv6: false
@@ -176,10 +176,30 @@ proxies:
   - name: "ss1"
     type: ss
     server: 61.195.97.240
-    port: 46205
+    port: 47089
     cipher: aes-256-gcm
-    password: "8jsEF0F2Tt8399FS"
-    # udp: true
+    password: "ua3A3F6eCU4fJ3Lo"
+    udp: true
+
+  - name: "ss2"
+    type: ss
+    server: 144.48.212.75
+    port: 39953
+    cipher: aes-256-gcm
+    password: "L7FC56It58b7iHM2"
+    udp: true
+
+  # - name: tj
+  #   server: 103.152.254.166
+  #   port: 443
+  #   type: trojan
+  #   password: "37jPoFo6f440Z4E1"
+  #   network: ws
+  #   # sni: tikvpn.in
+  #   skip-cert-verify: true
+  #   udp: true
+  #   ws-opts:
+  #     path: /rainbow/mika
 
 
   # ShadowsocksR
@@ -202,7 +222,7 @@ proxies:
     # protocol-param: "#"
     # udp: true
 
-# proxy-groups:
+proxy-groups:
 #   # relay chains the proxies. proxies shall not contain a relay. No UDP support.
 #   # Traffic: clash <-> http <-> vmess <-> ss1 <-> ss2 <-> Internet
 #   - name: "relay"
@@ -225,15 +245,14 @@ proxies:
 #     url: 'http://www.gstatic.com/generate_204'
 #     interval: 300
 
-#   # fallback selects an available policy by priority. The availability is tested by accessing an URL, just like an auto url-test group.
-#   - name: "fallback-auto"
-#     type: fallback
-#     proxies:
-#       - ss1
-#       - ss2
-#       - vmess1
-#     url: 'http://www.gstatic.com/generate_204'
-#     interval: 300
+  # fallback selects an available policy by priority. The availability is tested by accessing an URL, just like an auto url-test group.
+  - name: "fb"
+    type: url-test
+    proxies:
+      - ss1
+      - ss2
+    url: 'https://www.baidu.com'
+    interval: 5
 
 #   # load-balance: The request of the same eTLD+1 will be dial to the same proxy.
 #   - name: "load-balance"
@@ -316,4 +335,4 @@ rules:
   # - DST-PORT,80,DIRECT
   # - SRC-PORT,7777,DIRECT
   # - RULE-SET,apple,REJECT # Premium only
-  - MATCH,ss1
+  - MATCH,fb
