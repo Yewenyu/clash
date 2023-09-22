@@ -103,18 +103,53 @@ func processUDP() {
 	}
 }
 
+var HandleUDPCount = 4
+var HandleTCPCount = 10
+var HandleTCPTimeout = 1
+
+var hancleChan = make(chan C.ConnContext)
+
+func handleTCPConnWithChain() {
+
+	connList := make([]C.ConnContext, 0)
+
+	for {
+		conn := <-hancleChan
+		connList = append(connList, conn)
+		if len(connList) > HandleTCPCount {
+			first := connList[0].Conn()
+			go func() {
+				time.Sleep(time.Duration(HandleTCPTimeout) * time.Second)
+				first.Close()
+			}()
+
+			connList = connList[1:]
+		}
+		go func() {
+			handleTCPConn(conn)
+		}()
+
+	}
+}
+
 func process() {
-	numUDPWorkers := 4
+	numUDPWorkers := HandleUDPCount
 	if num := runtime.GOMAXPROCS(0); num > numUDPWorkers {
 		numUDPWorkers = num
 	}
 	for i := 0; i < numUDPWorkers; i++ {
 		go processUDP()
 	}
-
+	go handleTCPConnWithChain()
 	queue := tcpQueue
+
 	for conn := range queue {
-		go handleTCPConn(conn)
+		if HandleTCPCount > 0 {
+			hancleChan <- conn
+		} else {
+			go handleTCPConn(conn)
+		}
+
 	}
 }
 

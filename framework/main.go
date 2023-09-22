@@ -19,6 +19,8 @@ import (
 	"github.com/Dreamacro/clash/hub/route"
 	"github.com/Dreamacro/clash/log"
 	"github.com/Dreamacro/clash/tunnel/statistic"
+
+	t "github.com/Dreamacro/clash/tunnel"
 )
 
 // framework support
@@ -110,8 +112,8 @@ func CloseAllConnections() {
 
 *
 */
-func CustomLogFile(logPath string, level int) {
-	log.CustomLogPath(logPath, level)
+func CustomLogFile(logPath string, level int, maxCount int) {
+	log.CustomLogPath(logPath, level, maxCount)
 }
 
 func SetGCPrecent(v int) {
@@ -119,6 +121,12 @@ func SetGCPrecent(v int) {
 }
 func FreeOSMemory() {
 	debug.FreeOSMemory()
+}
+
+func SetConnectCount(tcp int, udp int, tcpTimeout int) {
+	t.HandleTCPCount = tcp
+	t.HandleUDPCount = udp
+	t.HandleTCPTimeout = tcpTimeout
 }
 
 func main() {
