@@ -16,7 +16,6 @@ import (
 	"github.com/Dreamacro/clash/config"
 	"github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/hub/executor"
-	"github.com/Dreamacro/clash/hub/route"
 	"github.com/Dreamacro/clash/log"
 	"github.com/Dreamacro/clash/tunnel/statistic"
 
@@ -55,8 +54,13 @@ func SetupHomeDir(homeDirPath string) {
 	constant.SetHomeDir(homeDirPath)
 }
 
+var cfgPath = ""
+var externalControllerAddr = ""
+
 func RunByConfig(configPath string, externalController string) error {
 	log.Infoln("start run")
+	cfgPath = configPath
+	externalControllerAddr = externalController
 	constant.SetConfig(configPath)
 	rawConfig, err := GetRawCfgByPath(configPath)
 	if err != nil {
@@ -75,7 +79,7 @@ func RunByConfig(configPath string, externalController string) error {
 		log.Infoln("config.parse raw config failed by error: %s", err.Error())
 		return err
 	}
-	go route.Start(cfg.General.ExternalController, cfg.General.Secret)
+	// go route.Start(externalController, "")
 	executor.ApplyConfig(cfg, true)
 	log.Infoln("apply config success")
 	return nil
@@ -124,10 +128,34 @@ func FreeOSMemory() {
 }
 
 func SetConnectCount(tcp int, udp int, tcpTimeout int) {
-	t.HandleTCPCount = tcp
-	t.HandleUDPCount = udp
-	t.HandleTCPTimeout = tcpTimeout
+	t.SetGoCountAndTimeout(tcp, udp, tcpTimeout)
 }
+func ClearTcpConn() {
+	t.SetClear(true)
+}
+func Restart() {
+	// rawConfig, _ := GetRawCfgByPath(cfgPath)
+	// cfg, _ := config.ParseRawConfig(rawConfig)
+	// executor.ApplyConfig(cfg, true)
+	t.ReStart()
+}
+
+// client := &http.Client{}
+// 	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s/configs?path=%s&force=true", externalControllerAddr, cfgPath), nil)
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		return err.Error()
+// 	}
+// 	req.Header = map[string][]string{
+// 		"Content-Type": {"application/json"},
+// 	}
+// 	resp, err := client.Do(req)
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		return err.Error()
+// 	}
+// 	defer resp.Body.Close()
+// 	return resp.Status
 
 func main() {
 

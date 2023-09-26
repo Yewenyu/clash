@@ -96,55 +96,45 @@ func SetMode(m TunnelMode) {
 }
 
 // processUDP starts a loop to handle udp packet
-func processUDP() {
+func processUDP(ctx context.Context) {
 	queue := udpQueue
+
+loop:
 	for conn := range queue {
-		handleUDPConn(conn)
-	}
-}
-
-var HandleUDPCount = 4
-var HandleTCPCount = 10
-var HandleTCPTimeout = 1
-
-var hancleChan = make(chan C.ConnContext)
-
-func handleTCPConnWithChain() {
-
-	connList := make([]C.ConnContext, 0)
-
-	for {
-		conn := <-hancleChan
-		connList = append(connList, conn)
-		if len(connList) > HandleTCPCount {
-			first := connList[0].Conn()
-			go func() {
-				time.Sleep(time.Duration(HandleTCPTimeout) * time.Second)
-				first.Close()
-			}()
-
-			connList = connList[1:]
+		select {
+		case <-ctx.Done():
+			break loop
+		default:
 		}
-		go func() {
-			handleTCPConn(conn)
-		}()
-
+		handleUDPConn(conn)
+		// handleUDPChan <- conn
 	}
 }
 
 func process() {
-	numUDPWorkers := HandleUDPCount
+	ctx, _ := context.WithCancel(reStartContext)
+	tcpCount, udpCount, _ := getGoCountAndTimeout()
+	numUDPWorkers := udpCount
 	if num := runtime.GOMAXPROCS(0); num > numUDPWorkers {
 		numUDPWorkers = num
 	}
+	go handleUDPConnWithChan(ctx)
 	for i := 0; i < numUDPWorkers; i++ {
-		go processUDP()
+		go processUDP(ctx)
 	}
-	go handleTCPConnWithChain()
+	go handleTCPConnWithChain(ctx)
 	queue := tcpQueue
+	canHandleTCpCount := tcpCount > 0
 
+loop:
 	for conn := range queue {
-		if HandleTCPCount > 0 {
+		select {
+		case <-ctx.Done():
+			break loop
+		default:
+
+		}
+		if canHandleTCpCount {
 			hancleChan <- conn
 		} else {
 			go handleTCPConn(conn)
@@ -465,4 +455,109 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 	}
 
 	return proxies["DIRECT"], nil, nil
+}
+
+var handleUDPCount = 4
+var handleTCPCount = 10
+var handleTCPTimeout = 1
+var handleClearConn = false
+var rwLock = &sync.Mutex{}
+var reStartContext, cancel = context.WithCancel(context.Background())
+
+func ReStart() {
+	cancel()
+	go func() {
+		reStartContext, cancel = context.WithCancel(context.Background())
+		go process()
+	}()
+
+}
+
+func SetGoCountAndTimeout(tcp, udp, tcpTimeout int) {
+	rwLock.Lock()
+	handleTCPCount = tcp
+	handleUDPCount = udp
+	handleTCPTimeout = tcpTimeout
+	rwLock.Unlock()
+}
+func getGoCountAndTimeout() (tcp, udp, tcpTimeout int) {
+	rwLock.Lock()
+	tcp = handleTCPCount
+	udp = handleUDPCount
+	tcpTimeout = handleTCPTimeout
+	rwLock.Unlock()
+	return tcp, udp, tcpTimeout
+}
+func SetClear(clear bool) {
+	rwLock.Lock()
+	handleClearConn = clear
+	rwLock.Unlock()
+}
+func getClear() bool {
+	rwLock.Lock()
+	clear := handleClearConn
+	rwLock.Unlock()
+	return clear
+}
+
+var hancleChan = make(chan C.ConnContext)
+var handleUDPChan = make(chan *inbound.PacketAdapter)
+
+func handleUDPConnWithChan(ctx context.Context) {
+	handleConnChan(ctx, handleUDPChan, func(conn *inbound.PacketAdapter) {
+		conn.Drop()
+	}, func(conn *inbound.PacketAdapter) {
+		handleUDPConn(conn)
+	}, func() (count, timeout int) {
+		_, count, timeout = getGoCountAndTimeout()
+		return count, timeout
+	})
+}
+func handleTCPConnWithChain(ctx context.Context) {
+
+	handleConnChan(ctx, hancleChan, func(conn C.ConnContext) {
+		conn.Conn().Close()
+	}, func(conn C.ConnContext) {
+		handleTCPConn(conn)
+	}, func() (count, timeout int) {
+		count, _, timeout = getGoCountAndTimeout()
+		return count, timeout
+	})
+}
+func handleConnChan[T any](ctx context.Context, connChan chan T, stop, handle func(T), countAndTimeout func() (count, timeout int)) {
+	connList := make([]T, 0)
+
+loop:
+	for {
+		select {
+		case <-ctx.Done():
+			break loop
+		default:
+
+		}
+		count, timeout := countAndTimeout()
+		clear := getClear()
+		if clear {
+			for _, c := range connList {
+				stop(c)
+			}
+			connList = make([]T, 0)
+			SetClear(false)
+		}
+		conn := <-connChan
+		connList = append(connList, conn)
+		for len(connList) > count {
+			first := connList[0]
+			go func() {
+				time.Sleep(time.Duration(timeout) * time.Second)
+				stop(first)
+			}()
+
+			connList = connList[1:]
+		}
+		go func() {
+			handle(conn)
+		}()
+
+	}
 }
