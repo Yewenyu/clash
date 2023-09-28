@@ -18,6 +18,7 @@ import (
 	"github.com/Dreamacro/clash/hub/executor"
 	"github.com/Dreamacro/clash/log"
 	"github.com/Dreamacro/clash/tunnel/statistic"
+	"github.com/eycorsican/go-tun2socks/client"
 
 	t "github.com/Dreamacro/clash/tunnel"
 )
@@ -138,6 +139,10 @@ func Restart() {
 	// cfg, _ := config.ParseRawConfig(rawConfig)
 	// executor.ApplyConfig(cfg, true)
 	t.ReStart()
+}
+
+func StartTun2socks(tunfd int, host string, port int, mtu int, udpEnable bool, udpTimeout int) string {
+	return client.StartTun2socks(tunfd, host, port, mtu, udpEnable, udpTimeout)
 }
 
 // client := &http.Client{}

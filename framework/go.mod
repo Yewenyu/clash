@@ -2,15 +2,14 @@ module clash
 
 go 1.21.0
 
-require github.com/Dreamacro/clash v1.17.0
+require (
+	github.com/Dreamacro/clash v1.17.0
+	github.com/eycorsican/go-tun2socks v1.16.11
+)
 
 require (
 	github.com/Dreamacro/protobytes v0.0.0-20230617041236-6500a9f4f158 // indirect
-	github.com/ajg/form v1.5.1 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
-	github.com/go-chi/chi/v5 v5.0.8 // indirect
-	github.com/go-chi/cors v1.2.1 // indirect
-	github.com/go-chi/render v1.0.2 // indirect
 	github.com/gofrs/uuid/v5 v5.0.0 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
@@ -31,7 +30,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.13.0 // indirect
 	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17 // indirect
-	golang.org/x/mobile v0.0.0-20230906132913-2077a3224571 // indirect
+	golang.org/x/mobile v0.0.0-20230922142353-e2f452493d57 // indirect
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/net v0.15.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
@@ -42,3 +41,5 @@ require (
 )
 
 replace github.com/Dreamacro/clash v1.17.0 => ../
+
+replace github.com/eycorsican/go-tun2socks => ./tun2socks
