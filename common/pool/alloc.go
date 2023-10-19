@@ -1,70 +1,87 @@
 package pool
 
-// Inspired by https://github.com/xtaci/smux/blob/master/alloc.go
-
 import (
 	"errors"
 	"math/bits"
 	"sync"
 )
 
+const maxPoolsPerSize = 5
+
 var defaultAllocator = NewAllocator()
 
-// Allocator for incoming frames, optimized to prevent overwriting after zeroing
 type Allocator struct {
-	buffers []sync.Pool
+	buffers map[int]*Pool
+	mu      sync.Mutex
 }
 
-// NewAllocator initiates a []byte allocator for frames less than 65536 bytes,
-// the waste(memory fragmentation) of space allocation is guaranteed to be
-// no more than 50%.
+type Pool struct {
+	useIndex int
+	p        []sync.Pool
+}
+
 func NewAllocator() *Allocator {
-	alloc := new(Allocator)
-	alloc.buffers = make([]sync.Pool, 17) // 1B -> 64K
-	for k := range alloc.buffers {
-		i := k
-		alloc.buffers[k].New = func() any {
-			return make([]byte, 1<<uint32(i))
-		}
+	return &Allocator{
+		buffers: make(map[int]*Pool),
 	}
-	return alloc
 }
 
-// Get a []byte from pool with most appropriate cap
 func (alloc *Allocator) Get(size int) []byte {
-	switch {
-	case size < 0:
-		panic("alloc.Get: len out of range")
-	case size == 0:
-		return nil
-	case size > 65536:
-		return make([]byte, size)
-	default:
-		bits := msb(size)
-		if size == 1<<bits {
-			return alloc.buffers[bits].Get().([]byte)[:size]
-		}
+	alloc.mu.Lock()
+	defer alloc.mu.Unlock()
 
-		return alloc.buffers[bits+1].Get().([]byte)[:size]
+	bufferSize := getBufferSize(size)
+	pool, exists := alloc.buffers[bufferSize]
+
+	if !exists {
+		pool = &Pool{
+			useIndex: 0,
+			p:        []sync.Pool{},
+		}
+		alloc.buffers[bufferSize] = pool
 	}
+
+	if pool.useIndex == len(pool.p) {
+		if pool.useIndex < maxPoolsPerSize {
+			pool.p = append(pool.p, sync.Pool{New: func() interface{} { return make([]byte, bufferSize) }})
+		} else {
+			pool.useIndex = 0
+		}
+	}
+	p := &pool.p[pool.useIndex]
+	b := p.Get().([]byte)
+	p.Put(b)
+	buf := b[:size]
+	pool.useIndex++
+	return buf
 }
 
-// Put returns a []byte to pool for future use,
-// which the cap must be exactly 2^n
 func (alloc *Allocator) Put(buf []byte) error {
-	if cap(buf) == 0 || cap(buf) > 65536 {
-		return nil
+	alloc.mu.Lock()
+	defer alloc.mu.Unlock()
+
+	bufferSize := getBufferSize(len(buf))
+	pool, exists := alloc.buffers[bufferSize]
+
+	if !exists || pool.useIndex == 0 {
+		return errors.New("no matching pool found or all pools are empty")
 	}
 
-	bits := msb(cap(buf))
-	if cap(buf) != 1<<bits {
-		return errors.New("allocator Put() incorrect buffer size")
-	}
-
-	//nolint
-	//lint:ignore SA6002 ignore temporarily
-	alloc.buffers[bits].Put(buf)
+	pool.useIndex--
 	return nil
+}
+
+func getBufferSize(size int) int {
+	switch {
+	case size <= 10:
+		return 10
+	case size <= 100:
+		return 100
+	case size <= 1000:
+		return 1000
+	default:
+		return (size/1000 + 1) * 1000
+	}
 }
 
 // msb return the pos of most significant bit

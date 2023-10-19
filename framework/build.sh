@@ -9,6 +9,7 @@
 go mod tidy
 go install golang.org/x/mobile/cmd/gomobile@latest
 go get golang.org/x/mobile/cmd/gobind
+export PATH=$PATH:$(go env GOPATH)/bin
 gomobile init
 gomobile bind  -target=ios,macos,iossimulator -o=framework/Clash.xcframework -bootclasspath=.. -iosversion=11.0 -v
 open framework/

@@ -458,8 +458,8 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 }
 
 var handleUDPCount = 4
-var handleTCPCount = 10
-var handleTCPTimeout = 1
+var handleTCPCount = 20
+var handleTCPTimeout = 5
 var handleClearConn = false
 var rwLock = &sync.Mutex{}
 var reStartContext, cancel = context.WithCancel(context.Background())
@@ -548,16 +548,16 @@ loop:
 		connList = append(connList, conn)
 		for len(connList) > count {
 			first := connList[0]
-			go func() {
+			go func(first T) {
 				time.Sleep(time.Duration(timeout) * time.Second)
 				stop(first)
-			}()
+			}(first)
 
 			connList = connList[1:]
 		}
-		go func() {
+		go func(conn T) {
 			handle(conn)
-		}()
+		}(conn)
 
 	}
 }

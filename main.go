@@ -1,6 +1,7 @@
 package main
 
 import (
+	"clash"
 	"flag"
 	"fmt"
 	"os"
@@ -61,6 +62,9 @@ func main() {
 	}
 	currentPath, _ := os.Getwd() // 获取当前路径
 	C.SetHomeDir(currentPath)
+	clash.SetConnectCount(20, 3, 1)
+	clash.SetGCPrecent(20)
+	clash.SetBufferSize(1024, 1024)
 
 	if configFile != "" {
 		if !filepath.IsAbs(configFile) {

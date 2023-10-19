@@ -7,7 +7,7 @@ import (
 )
 
 // Relay copies between left and right bidirectionally.
-func Relay(leftConn, rightConn net.Conn) {
+func Relay1(leftConn, rightConn net.Conn) {
 	ch := make(chan error)
 
 	go func() {
@@ -19,6 +19,35 @@ func Relay(leftConn, rightConn net.Conn) {
 	}()
 
 	io.Copy(WriteOnlyWriter{Writer: rightConn}, ReadOnlyReader{Reader: leftConn})
+	rightConn.SetReadDeadline(time.Now())
+	<-ch
+}
+
+var TCPBufferSize = 0
+
+func Relay(leftConn, rightConn net.Conn) {
+	if TCPBufferSize == 0 {
+		Relay1(leftConn, rightConn)
+		return
+	}
+	ch := make(chan error)
+
+	handle := func(w, r net.Conn) {
+		b := make([]byte, TCPBufferSize)
+		for {
+			n, err := r.Read(b)
+			if err != nil {
+				break
+			}
+			_, err = w.Write(b[:n])
+			if err != nil {
+				break
+			}
+		}
+	}
+	go handle(rightConn, leftConn)
+	handle(leftConn, rightConn)
+
 	rightConn.SetReadDeadline(time.Now())
 	<-ch
 }
