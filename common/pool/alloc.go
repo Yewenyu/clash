@@ -1,7 +1,6 @@
 package pool
 
 import (
-	"errors"
 	"math/bits"
 	"sync"
 )
@@ -41,33 +40,35 @@ func (alloc *Allocator) Get(size int) []byte {
 		alloc.buffers[bufferSize] = pool
 	}
 
-	if pool.useIndex == len(pool.p) {
-		if pool.useIndex < maxPoolsPerSize {
-			pool.p = append(pool.p, sync.Pool{New: func() interface{} { return make([]byte, bufferSize) }})
-		} else {
-			pool.useIndex = 0
-		}
+	if len(pool.p) < maxPoolsPerSize {
+		pool.p = append(pool.p, sync.Pool{New: func() interface{} { return make([]byte, bufferSize) }})
 	}
 	p := &pool.p[pool.useIndex]
 	b := p.Get().([]byte)
 	p.Put(b)
 	buf := b[:size]
-	pool.useIndex++
+	pool.useIndex = (pool.useIndex + 1) % maxPoolsPerSize
 	return buf
 }
 
 func (alloc *Allocator) Put(buf []byte) error {
-	alloc.mu.Lock()
-	defer alloc.mu.Unlock()
+	// alloc.mu.Lock()
+	// defer alloc.mu.Unlock()
 
-	bufferSize := getBufferSize(len(buf))
-	pool, exists := alloc.buffers[bufferSize]
+	// bufferSize := getBufferSize(len(buf))
+	// pool, exists := alloc.buffers[bufferSize]
 
-	if !exists || pool.useIndex == 0 {
-		return errors.New("no matching pool found or all pools are empty")
-	}
+	// if !exists {
+	// 	return errors.New("no matching pool found or all pools are empty")
+	// }
 
-	pool.useIndex--
+	// // 检查 buf 的大小是否与池的大小匹配
+	// expectedSize := bufferSize // 假设 getBufferSize 返回池的大小
+	// if len(buf) != expectedSize {
+	// 	return fmt.Errorf("buffer size %d does not match expected pool size %d", len(buf), expectedSize)
+	// }
+
+	// pool.useIndex = (pool.useIndex + maxPoolsPerSize - 1) % maxPoolsPerSize
 	return nil
 }
 
