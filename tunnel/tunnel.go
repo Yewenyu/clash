@@ -118,7 +118,7 @@ func process() {
 	if num := runtime.GOMAXPROCS(0); num > numUDPWorkers {
 		numUDPWorkers = num
 	}
-	go handleUDPConnWithChan(ctx)
+	// go handleUDPConnWithChan(ctx)
 	for i := 0; i < numUDPWorkers; i++ {
 		go processUDP(ctx)
 	}
@@ -457,8 +457,8 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 	return proxies["DIRECT"], nil, nil
 }
 
-var handleUDPCount = 4
-var handleTCPCount = 20
+var handleUDPCount = 5
+var handleTCPCount = 0
 var handleTCPTimeout = 5
 var handleClearConn = false
 var rwLock = &sync.Mutex{}

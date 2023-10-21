@@ -11,7 +11,7 @@
 # tproxy-port: 7893
 
 # HTTP(S) and SOCKS4(A)/SOCKS5 server on the same port
-mixed-port: 7778
+mixed-port: 7779
 
 # authentication of local SOCKS5/HTTP(S) server
 # authentication:
@@ -176,9 +176,9 @@ proxies:
   - name: "ss1"
     type: ss
     server: 43.225.100.71
-    port: 40645
+    port: 42619
     cipher: aes-256-gcm
-    password: "ZNH7Ted92cYggu7H"
+    password: "a2a21FFXH2sU4ZxQ"
     udp: true
 
   - name: "ss2"
@@ -335,4 +335,4 @@ rules:
   # - DST-PORT,80,DIRECT
   # - SRC-PORT,7777,DIRECT
   # - RULE-SET,apple,REJECT # Premium only
-  - MATCH,fb
+  - MATCH,DIRECT

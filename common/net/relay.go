@@ -3,6 +3,7 @@ package net
 import (
 	"io"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,11 @@ func Relay1(leftConn, rightConn net.Conn) {
 }
 
 var TCPBufferSize = 0
+var pool = sync.Pool{
+	New: func() any {
+		return make([]byte, TCPBufferSize)
+	},
+}
 
 func Relay(leftConn, rightConn net.Conn) {
 	if TCPBufferSize == 0 {
@@ -33,7 +39,8 @@ func Relay(leftConn, rightConn net.Conn) {
 	ch := make(chan error)
 
 	handle := func(w, r net.Conn) {
-		b := make([]byte, TCPBufferSize)
+		b := pool.Get().([]byte)
+		defer pool.Put(b)
 		for {
 			n, err := r.Read(b)
 			if err != nil {

@@ -1,5 +1,9 @@
 package pool
 
+import (
+	"time"
+)
+
 const (
 // io.Copy default buffer size is 32 KiB
 // but the maximum packet size of vmess/shadowsocks is about 16 KiB
@@ -18,6 +22,15 @@ func Get(size int) []byte {
 	return defaultAllocator.Get(size)
 }
 
+var last = time.Now().UnixMilli()
+
 func Put(buf []byte) error {
+	// defer func() {
+	// 	current := time.Now().UnixMilli()
+	// 	if current-last > 1000 {
+	// 		runtime.GC()
+	// 		last = current
+	// 	}
+	// }()
 	return defaultAllocator.Put(buf)
 }
