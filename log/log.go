@@ -74,8 +74,16 @@ func SetLevel(newLevel LogLevel) {
 	level = newLevel
 }
 
+var maxLogCount = 0
+var currentLogCount = 0
+
 func print(data Event) {
 	if data.LogLevel < level {
+		return
+	}
+	currentLogCount += 1
+
+	if maxLogCount > 0 && currentLogCount > maxLogCount {
 		return
 	}
 
@@ -98,4 +106,23 @@ func newLog(logLevel LogLevel, format string, v ...any) Event {
 		LogLevel: logLevel,
 		Payload:  fmt.Sprintf(format, v...),
 	}
+}
+
+func CustomLogPath(logPath string, level int, maxCount int) {
+
+	maxLogCount = maxCount
+	var logFilePath = logPath
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	// 	newlog := log.New()
+
+	// newlog.SetOutput(logFile)
+	// log.SetOutput(newlog.Writer())
+	if err != nil {
+		fmt.Printf("Error: %s\n", err)
+		return
+	}
+	// defer logFile.Close()
+
+	log.SetOutput(logFile)
+	log.SetLevel(log.Level(level))
 }

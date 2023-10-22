@@ -34,3 +34,9 @@ docs/.vitepress/cache
 
 # docs site build files
 docs/.vitepress/dist
+framework/framework
+config.yaml
+cache.db
+Country.mmdb
+go.work.sum
+framework/go.sum
