@@ -175,10 +175,10 @@ proxies:
   #   chacha20-ietf-poly1305 xchacha20-ietf-poly1305
   - name: "ss1"
     type: ss
-    server: 43.225.100.71
-    port: 42619
+    server: 120.240.102.19
+    port: 49025
     cipher: aes-256-gcm
-    password: "a2a21FFXH2sU4ZxQ"
+    password: "89Iw8XjGDHj6yy7W"
     udp: true
 
   - name: "ss2"
@@ -325,7 +325,6 @@ proxy-groups:
 rules:
   # - DOMAIN-SUFFIX,google.com,auto
   - DOMAIN-KEYWORD,ipinfo.io,DIRECT
-  - DOMAIN-KEYWORD,ip111.cn,DIRECT
   # - DOMAIN,google.com,auto
   # - DOMAIN-SUFFIX,ad.com,REJECT
   # - SRC-IP-CIDR,192.168.1.201/32,DIRECT
@@ -335,4 +334,4 @@ rules:
   # - DST-PORT,80,DIRECT
   # - SRC-PORT,7777,DIRECT
   # - RULE-SET,apple,REJECT # Premium only
-  - MATCH,DIRECT
+  - MATCH,ss1

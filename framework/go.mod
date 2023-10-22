@@ -10,7 +10,7 @@ require (
 	github.com/gofrs/uuid/v5 v5.0.0 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
-	github.com/insomniacslk/dhcp v0.0.0-20230612134759-b20c9ba983df // indirect
+	github.com/insomniacslk/dhcp v0.0.0-20230816195147-b3ca2534940d // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect

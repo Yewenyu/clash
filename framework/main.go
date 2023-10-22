@@ -8,10 +8,8 @@ package clash
 import "C"
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"os"
 	"runtime/debug"
 
@@ -25,7 +23,6 @@ import (
 
 	N "github.com/Dreamacro/clash/common/net"
 	"github.com/Dreamacro/clash/common/pool"
-	t "github.com/Dreamacro/clash/tunnel"
 )
 
 // framework support
@@ -136,89 +133,6 @@ func SetBufferSize(tcp, udp int) {
 	N.TCPBufferSize = tcp
 	pool.RelayBufferSize = tcp
 	pool.UDPBufferSize = udp
-}
-
-func SetConnectCount(tcp int, udp int, tcpTimeout int) {
-	t.SetGoCountAndTimeout(tcp, udp, tcpTimeout)
-}
-func ClearTcpConn() {
-	t.SetClear(true)
-}
-func Restart() {
-	// rawConfig, _ := GetRawCfgByPath(cfgPath)
-	// cfg, _ := config.ParseRawConfig(rawConfig)
-	// executor.ApplyConfig(cfg, true)
-	t.ReStart()
-}
-
-type listenCfg struct {
-	TcpCount, UdpCount, TcpSize, UdpSize, TcpTimeout, GCPercent, Memory int
-	Clear, GC, ReStart                                                  bool
-}
-
-func ListenConfig(port int) {
-
-	go func() {
-		// 定义服务器的地址和端口
-		serverAddress := fmt.Sprintf("127.0.0.1:%d", port)
-		udpAddress, err := net.ResolveUDPAddr("udp", serverAddress)
-		if err != nil {
-			fmt.Println("Error: ", err)
-			// os.Exit(1)
-		}
-
-		// 创建UDP连接
-		conn, err := net.ListenUDP("udp", udpAddress)
-		if err != nil {
-			fmt.Println("Error: ", err)
-			// os.Exit(1)
-		}
-		defer conn.Close()
-
-		buf := make([]byte, 1024)
-
-		for {
-			n, addr, err := conn.ReadFromUDP(buf)
-			if err != nil {
-				fmt.Println("Error: ", err)
-				continue
-			}
-
-			b := buf[:n]
-			var j listenCfg
-			err = json.Unmarshal(b, &j)
-			response := ""
-			if err == nil {
-				if j.TcpCount > 0 {
-					SetConnectCount(j.TcpCount, j.UdpCount, j.TcpTimeout)
-				}
-				if j.TcpSize > 0 {
-					SetBufferSize(j.TcpSize, j.UdpCount)
-				}
-				if j.Clear {
-					ClearTcpConn()
-				}
-				if j.GC {
-					FreeOSMemory()
-				}
-				if j.Clear {
-					ClearTcpConn()
-				}
-				response = fmt.Sprintf("Received %s", string(b))
-			} else {
-				response = fmt.Sprintf("err %s json : %s", err, string(b))
-			}
-			_, err = conn.WriteToUDP([]byte(response), addr)
-
-			// 发送回应消息
-
-			if err != nil {
-				fmt.Println("Error: ", err)
-				continue
-			}
-		}
-	}()
-
 }
 
 // func StartTun2socks(tunfd int, host string, port int, mtu int, udpEnable bool, udpTimeout int) string {

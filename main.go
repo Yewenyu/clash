@@ -64,7 +64,7 @@ func main() {
 	}
 	currentPath, _ := os.Getwd() // 获取当前路径
 	C.SetHomeDir(currentPath)
-	clash.SetConnectCount(0, 5, 100)
+	// clash.SetBufferSize(1024, 1024*5)
 	// clash.SetGCPrecent(20)
 	clash.SetBufferSize(1024, 1024*10)
 	go http.ListenAndServe(":6060", nil)

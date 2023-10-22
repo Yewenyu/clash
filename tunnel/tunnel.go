@@ -96,50 +96,25 @@ func SetMode(m TunnelMode) {
 }
 
 // processUDP starts a loop to handle udp packet
-func processUDP(ctx context.Context) {
+func processUDP() {
 	queue := udpQueue
-
-loop:
 	for conn := range queue {
-		select {
-		case <-ctx.Done():
-			break loop
-		default:
-		}
 		handleUDPConn(conn)
-		// handleUDPChan <- conn
 	}
 }
 
 func process() {
-	ctx, _ := context.WithCancel(reStartContext)
-	tcpCount, udpCount, _ := getGoCountAndTimeout()
-	numUDPWorkers := udpCount
+	numUDPWorkers := 4
 	if num := runtime.GOMAXPROCS(0); num > numUDPWorkers {
 		numUDPWorkers = num
 	}
-	// go handleUDPConnWithChan(ctx)
 	for i := 0; i < numUDPWorkers; i++ {
-		go processUDP(ctx)
+		go processUDP()
 	}
-	go handleTCPConnWithChain(ctx)
+
 	queue := tcpQueue
-	canHandleTCpCount := tcpCount > 0
-
-loop:
 	for conn := range queue {
-		select {
-		case <-ctx.Done():
-			break loop
-		default:
-
-		}
-		if canHandleTCpCount {
-			hancleChan <- conn
-		} else {
-			go handleTCPConn(conn)
-		}
-
+		go handleTCPConn(conn)
 	}
 }
 
@@ -455,109 +430,4 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 	}
 
 	return proxies["DIRECT"], nil, nil
-}
-
-var handleUDPCount = 5
-var handleTCPCount = 0
-var handleTCPTimeout = 5
-var handleClearConn = false
-var rwLock = &sync.Mutex{}
-var reStartContext, cancel = context.WithCancel(context.Background())
-
-func ReStart() {
-	cancel()
-	go func() {
-		reStartContext, cancel = context.WithCancel(context.Background())
-		go process()
-	}()
-
-}
-
-func SetGoCountAndTimeout(tcp, udp, tcpTimeout int) {
-	rwLock.Lock()
-	handleTCPCount = tcp
-	handleUDPCount = udp
-	handleTCPTimeout = tcpTimeout
-	rwLock.Unlock()
-}
-func getGoCountAndTimeout() (tcp, udp, tcpTimeout int) {
-	rwLock.Lock()
-	tcp = handleTCPCount
-	udp = handleUDPCount
-	tcpTimeout = handleTCPTimeout
-	rwLock.Unlock()
-	return tcp, udp, tcpTimeout
-}
-func SetClear(clear bool) {
-	rwLock.Lock()
-	handleClearConn = clear
-	rwLock.Unlock()
-}
-func getClear() bool {
-	rwLock.Lock()
-	clear := handleClearConn
-	rwLock.Unlock()
-	return clear
-}
-
-var hancleChan = make(chan C.ConnContext)
-var handleUDPChan = make(chan *inbound.PacketAdapter)
-
-func handleUDPConnWithChan(ctx context.Context) {
-	handleConnChan(ctx, handleUDPChan, func(conn *inbound.PacketAdapter) {
-		conn.Drop()
-	}, func(conn *inbound.PacketAdapter) {
-		handleUDPConn(conn)
-	}, func() (count, timeout int) {
-		_, count, timeout = getGoCountAndTimeout()
-		return count, timeout
-	})
-}
-func handleTCPConnWithChain(ctx context.Context) {
-
-	handleConnChan(ctx, hancleChan, func(conn C.ConnContext) {
-		conn.Conn().Close()
-	}, func(conn C.ConnContext) {
-		handleTCPConn(conn)
-	}, func() (count, timeout int) {
-		count, _, timeout = getGoCountAndTimeout()
-		return count, timeout
-	})
-}
-func handleConnChan[T any](ctx context.Context, connChan chan T, stop, handle func(T), countAndTimeout func() (count, timeout int)) {
-	connList := make([]T, 0)
-
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			break loop
-		default:
-
-		}
-		count, timeout := countAndTimeout()
-		clear := getClear()
-		if clear {
-			for _, c := range connList {
-				stop(c)
-			}
-			connList = make([]T, 0)
-			SetClear(false)
-		}
-		conn := <-connChan
-		connList = append(connList, conn)
-		for len(connList) > count {
-			first := connList[0]
-			go func(first T) {
-				time.Sleep(time.Duration(timeout) * time.Second)
-				stop(first)
-			}(first)
-
-			connList = connList[1:]
-		}
-		go func(conn T) {
-			handle(conn)
-		}(conn)
-
-	}
 }

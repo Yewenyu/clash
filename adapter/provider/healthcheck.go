@@ -2,14 +2,10 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Dreamacro/clash/common/batch"
 	C "github.com/Dreamacro/clash/constant"
-	"github.com/Dreamacro/clash/log"
 
 	"github.com/samber/lo"
 	"go.uber.org/atomic"
@@ -74,8 +70,6 @@ func (hc *HealthCheck) checkAll() {
 	hc.check(hc.proxies)
 }
 
-var isFirstTest = true
-
 func (hc *HealthCheck) check(proxies []C.Proxy) {
 	b, _ := batch.New(context.Background(), batch.WithConcurrencyNum(10))
 	for _, proxy := range proxies {
@@ -88,25 +82,6 @@ func (hc *HealthCheck) check(proxies []C.Proxy) {
 		})
 	}
 	b.Wait()
-
-	if isFirstTest {
-		isFirstTest = false
-		fast := proxies[0]
-		logString := ""
-		var dic = make(map[string]interface{}, 0)
-		for _, proxy := range proxies {
-			if fast.LastDelay() > proxy.LastDelay() {
-				fast = proxy
-			}
-			var host = strings.Split(proxy.Addr(), ":")[0]
-			dic[host] = proxy.LastDelay()
-		}
-		dic["fast"] = strings.Split(fast.Addr(), ":")[0]
-		data, _ := json.Marshal(dic)
-		var d = string(data)
-		logString = fmt.Sprintf("<<url-test:%s>>", d)
-		log.Infoln("%s", logString)
-	}
 }
 
 func (hc *HealthCheck) close() {
