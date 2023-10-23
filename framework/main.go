@@ -139,6 +139,18 @@ func SetBufferSize(tcp, udp int) {
 // 	return client.StartTun2socks(tunfd, host, port, mtu, udpEnable, udpTimeout)
 // }
 
+// func InputPacket(packet []byte) {
+// 	client.InputPacket(packet)
+// }
+
+// type PacketFlow interface {
+// 	Write([]byte)
+// }
+
+// func StartTun2socksIO(flow PacketFlow, host string, port int, mtu int, udpEnable bool, udpTimeout int) string {
+// 	return client.StartTun2socksIO(flow, host, port, mtu, udpEnable, udpTimeout)
+// }
+
 // client := &http.Client{}
 // 	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s/configs?path=%s&force=true", externalControllerAddr, cfgPath), nil)
 // 	if err != nil {
