@@ -134,6 +134,10 @@ func SetBufferSize(tcp, udp int) {
 	pool.RelayBufferSize = tcp
 	pool.UDPBufferSize = udp
 }
+func SetMaxConnectCount(max, free int) {
+	N.MaxConnectCount = max
+	N.FreeConnectCount = free
+}
 
 // func StartTun2socks(tunfd int, host string, port int, mtu int, udpEnable bool, udpTimeout int) string {
 // 	return client.StartTun2socks(tunfd, host, port, mtu, udpEnable, udpTimeout)

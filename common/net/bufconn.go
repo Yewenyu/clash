@@ -3,7 +3,6 @@ package net
 import (
 	"bufio"
 	"net"
-	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -28,48 +27,65 @@ func NewBufferedConn(c net.Conn) *BufferedConn {
 	if bc, ok := c.(*BufferedConn); ok {
 		return bc
 	}
-	handle(countChan, &handleOnce)
+
+	handleOnce.Do(func() {
+		countChan = make(chan *hConn, FreeConnectCount+5)
+		handle(countChan, nil)
+	})
 
 	r := readPool.Get().(*bufio.Reader)
 	r.Reset(c)
 	hc := hConn{Conn: c, mu: &sync.Mutex{}}
 	conn := &BufferedConn{r: r, hConn: hc}
-	countChan <- &conn.hConn
+	go func() {
+		countChan <- &conn.hConn
+	}()
 	return conn
 }
 
 var (
-	handleOnce sync.Once
-
-	countChan = make(chan *hConn, 10)
-	maxCount  = 70
-	freeCount = 30
+	handleOnce       sync.Once
+	MaxConnectCount  = 70
+	FreeConnectCount = 30
+	countChan        chan *hConn
 )
 
 func handle(hchan chan *hConn, once *sync.Once) {
 
-	once.Do(func() {
-
+	h := func() {
 		go func() {
 			conns := make([]*hConn, 0)
 			lastClear := time.Now().Unix()
 			for {
-				c := <-hchan
-				conns = append(conns, c)
+				addCount := 0
+			l:
+				for {
+
+					select {
+					case c := <-hchan:
+						conns = append(conns, c)
+						addCount += 1
+						if addCount > FreeConnectCount {
+							break l
+						}
+					case <-time.After(time.Millisecond * 500):
+						break l
+					}
+				}
+
 				current := time.Now().Unix()
-				if len(conns) > maxCount {
-					for i := 0; i < freeCount; i++ {
+				if len(conns) > MaxConnectCount {
+					for i := 0; i < FreeConnectCount; i++ {
 						conns[i].Close()
 					}
-					conns = conns[freeCount:]
+					conns = conns[FreeConnectCount:]
 					lastClear = current
-					debug.FreeOSMemory()
-				} else if len(conns) > freeCount && current-lastClear > 10 {
+				} else if len(conns) > FreeConnectCount && current-lastClear > 5 {
 					newCon := make([]*hConn, 0)
 					for _, c := range conns {
 						var canAdd = false
 						c.mu.Lock()
-						if current-c.aliveTime < 2 && !c.isClose {
+						if current-c.aliveTime < 1 && !c.isClose {
 							canAdd = true
 						}
 						c.mu.Unlock()
@@ -85,7 +101,13 @@ func handle(hchan chan *hConn, once *sync.Once) {
 				}
 			}
 		}()
-	})
+	}
+
+	if once == nil {
+		h()
+	} else {
+		once.Do(h)
+	}
 }
 
 func (c *BufferedConn) Close() error {
