@@ -2,6 +2,9 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Dreamacro/clash/common/batch"
@@ -70,6 +73,8 @@ func (hc *HealthCheck) checkAll() {
 	hc.check(hc.proxies)
 }
 
+var HealthCheckCallBack func(result string)
+
 func (hc *HealthCheck) check(proxies []C.Proxy) {
 	b, _ := batch.New(context.Background(), batch.WithConcurrencyNum(10))
 	for _, proxy := range proxies {
@@ -82,6 +87,26 @@ func (hc *HealthCheck) check(proxies []C.Proxy) {
 		})
 	}
 	b.Wait()
+	go func(proxies []C.Proxy) {
+		fast := proxies[0]
+		logString := ""
+		var dic = make(map[string]interface{}, 0)
+		for _, proxy := range proxies {
+			if fast.LastDelay() > proxy.LastDelay() {
+				fast = proxy
+			}
+			var host = strings.Split(proxy.Addr(), ":")[0]
+			dic[host] = proxy.LastDelay()
+		}
+		dic["fast"] = strings.Split(fast.Addr(), ":")[0]
+		data, _ := json.Marshal(dic)
+		var d = string(data)
+		logString = fmt.Sprintf("<<url-test:%s>>", d)
+		if HealthCheckCallBack != nil {
+			HealthCheckCallBack(logString)
+		}
+	}(proxies)
+
 }
 
 func (hc *HealthCheck) close() {

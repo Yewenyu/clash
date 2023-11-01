@@ -9,10 +9,10 @@ import "C"
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"runtime/debug"
 
+	"github.com/Dreamacro/clash/adapter/provider"
 	"github.com/Dreamacro/clash/config"
 	"github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/hub/executor"
@@ -31,7 +31,7 @@ func ReadConfig(path string) ([]byte, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil, err
 	}
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -137,6 +137,16 @@ func SetBufferSize(tcp, udp int) {
 func SetMaxConnectCount(max, free int) {
 	N.MaxConnectCount = max
 	N.FreeConnectCount = free
+}
+
+type InfoCallBack interface {
+	HealthTest(result string)
+}
+
+func SetCallBack(callBack InfoCallBack) {
+	provider.HealthCheckCallBack = func(result string) {
+		callBack.HealthTest(result)
+	}
 }
 
 // func StartTun2socks(tunfd int, host string, port int, mtu int, udpEnable bool, udpTimeout int) string {
