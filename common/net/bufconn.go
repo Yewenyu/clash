@@ -56,31 +56,26 @@ func handle(hchan chan *hConn, once *sync.Once) {
 		go func() {
 			conns := make([]*hConn, 0)
 			lastClear := time.Now().Unix()
-			for {
-				addCount := 0
-			l:
-				for {
 
-					select {
-					case c := <-hchan:
-						conns = append(conns, c)
-						addCount += 1
-						if addCount > FreeConnectCount {
-							break l
-						}
-					case <-time.After(time.Millisecond * 500):
-						break l
-					}
+			for {
+
+				select {
+				case c := <-hchan:
+					conns = append(conns, c)
+				case <-time.After(time.Millisecond * 500):
 				}
 
 				current := time.Now().Unix()
 				if len(conns) > MaxConnectCount {
-					for i := 0; i < FreeConnectCount; i++ {
-						conns[i].Close()
-					}
-					conns = conns[FreeConnectCount:]
-					lastClear = current
-				} else if len(conns) > FreeConnectCount && current-lastClear > 5 {
+
+					go func(conn *hConn) {
+						time.Sleep(time.Second * 1)
+						conn.Close()
+
+					}(conns[0])
+					conns = conns[1:]
+				}
+				if len(conns) > FreeConnectCount && current-lastClear > 2 {
 					newCon := make([]*hConn, 0)
 					for _, c := range conns {
 						var canAdd = false
@@ -99,6 +94,7 @@ func handle(hchan chan *hConn, once *sync.Once) {
 					lastClear = current
 					conns = newCon
 				}
+				// go debug.FreeOSMemory()
 			}
 		}()
 	}
