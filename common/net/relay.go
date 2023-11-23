@@ -5,6 +5,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	connmanager "github.com/Dreamacro/clash/common/connManager"
 )
 
 // Relay copies between left and right bidirectionally.
@@ -31,23 +33,6 @@ var pool = sync.Pool{
 	},
 }
 
-var (
-	handleO sync.Once
-
-	cChan = make(chan *hConn, 10)
-)
-
-type hConn struct {
-	aliveTime int64
-	net.Conn
-	isClose bool
-	mu      *sync.Mutex
-}
-
-func (c hConn) Close() error {
-	return c.Conn.Close()
-}
-
 func Relay(leftConn, rightConn net.Conn) {
 	if TCPBufferSize == 0 {
 		Relay1(leftConn, rightConn)
@@ -55,11 +40,11 @@ func Relay(leftConn, rightConn net.Conn) {
 	}
 	// handle(cChan, &handleO)
 	mu := sync.Mutex{}
-	left := hConn{aliveTime: time.Now().Unix(), Conn: leftConn, mu: &mu}
-	right := hConn{aliveTime: time.Now().Unix(), Conn: rightConn, mu: &mu}
+	left := connmanager.HConn{AliveTime: time.Now().Unix(), Conn: leftConn, Mu: &mu}
+	right := connmanager.HConn{AliveTime: time.Now().Unix(), Conn: rightConn, Mu: &mu}
 	// cChan <- &left
 
-	handle := func(w, r hConn) {
+	handle := func(w, r connmanager.HConn) {
 		b := pool.Get().([]byte)
 		defer pool.Put(b)
 		defer w.Close()
@@ -68,7 +53,7 @@ func Relay(leftConn, rightConn net.Conn) {
 			if err != nil {
 				break
 			}
-			r.aliveTime = time.Now().Unix()
+			r.AliveTime = time.Now().Unix()
 			_, err = w.Write(b[:n])
 			if err != nil {
 				break

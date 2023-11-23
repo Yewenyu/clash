@@ -5,12 +5,14 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	connmanager "github.com/Dreamacro/clash/common/connManager"
 )
 
 type BufferedConn struct {
 	r *bufio.Reader
 
-	hConn
+	connmanager.HConn
 }
 
 var readPool = sync.Pool{
@@ -24,21 +26,22 @@ var readPool = sync.Pool{
 }
 
 func NewBufferedConn(c net.Conn) *BufferedConn {
+
 	if bc, ok := c.(*BufferedConn); ok {
 		return bc
 	}
 
 	handleOnce.Do(func() {
-		countChan = make(chan *hConn, FreeConnectCount+5)
-		handle(countChan, nil)
+		countChan = make(chan *connmanager.HConn, FreeConnectCount+5)
+		connmanager.Handle(countChan, nil, MaxConnectCount, FreeConnectCount)
 	})
 
 	r := readPool.Get().(*bufio.Reader)
 	r.Reset(c)
-	hc := hConn{Conn: c, mu: &sync.Mutex{}}
-	conn := &BufferedConn{r: r, hConn: hc}
+	hc := connmanager.HConn{Conn: c, Mu: &sync.Mutex{}}
+	conn := &BufferedConn{r: r, HConn: hc}
 	go func() {
-		countChan <- &conn.hConn
+		countChan <- &conn.HConn
 	}()
 	return conn
 }
@@ -47,74 +50,18 @@ var (
 	handleOnce       sync.Once
 	MaxConnectCount  = 70
 	FreeConnectCount = 30
-	countChan        chan *hConn
+	countChan        chan *connmanager.HConn
 )
 
-func handle(hchan chan *hConn, once *sync.Once) {
-
-	h := func() {
-		go func() {
-			conns := make([]*hConn, 0)
-			lastClear := time.Now().Unix()
-
-			for {
-
-				select {
-				case c := <-hchan:
-					conns = append(conns, c)
-				case <-time.After(time.Millisecond * 500):
-				}
-
-				current := time.Now().Unix()
-				if len(conns) > MaxConnectCount {
-
-					go func(conn *hConn) {
-						time.Sleep(time.Second * 1)
-						conn.Close()
-
-					}(conns[0])
-					conns = conns[1:]
-				}
-				if len(conns) > FreeConnectCount && current-lastClear > 2 {
-					newCon := make([]*hConn, 0)
-					for _, c := range conns {
-						var canAdd = false
-						c.mu.Lock()
-						if current-c.aliveTime < 1 && !c.isClose {
-							canAdd = true
-						}
-						c.mu.Unlock()
-						if canAdd {
-							newCon = append(newCon, c)
-						} else {
-							c.Close()
-						}
-
-					}
-					lastClear = current
-					conns = newCon
-				}
-				// go debug.FreeOSMemory()
-			}
-		}()
-	}
-
-	if once == nil {
-		h()
-	} else {
-		once.Do(h)
-	}
-}
-
 func (c *BufferedConn) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.isClose {
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
+	if c.IsClose {
 		return nil
 	}
 	// c.r.Reset(nil)
 	readPool.Put(c.r)
-	c.isClose = true
+	c.IsClose = true
 	return c.Conn.Close()
 }
 
@@ -129,16 +76,16 @@ func (c *BufferedConn) Peek(n int) ([]byte, error) {
 }
 
 func (c *BufferedConn) Read(p []byte) (int, error) {
-	c.mu.Lock()
-	c.aliveTime = time.Now().Unix()
-	c.mu.Unlock()
+	c.Mu.Lock()
+	c.AliveTime = time.Now().Unix()
+	c.Mu.Unlock()
 	return c.r.Read(p)
 }
 
 func (c *BufferedConn) ReadByte() (byte, error) {
-	c.mu.Lock()
-	c.aliveTime = time.Now().Unix()
-	c.mu.Unlock()
+	c.Mu.Lock()
+	c.AliveTime = time.Now().Unix()
+	c.Mu.Unlock()
 	return c.r.ReadByte()
 }
 
