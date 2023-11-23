@@ -5,8 +5,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	connmanager "github.com/Dreamacro/clash/common/connManager"
 )
 
 // Relay copies between left and right bidirectionally.
@@ -39,12 +37,7 @@ func Relay(leftConn, rightConn net.Conn) {
 		return
 	}
 	// handle(cChan, &handleO)
-	mu := sync.Mutex{}
-	left := connmanager.HConn{AliveTime: time.Now().Unix(), Conn: leftConn, Mu: &mu}
-	right := connmanager.HConn{AliveTime: time.Now().Unix(), Conn: rightConn, Mu: &mu}
-	// cChan <- &left
-
-	handle := func(w, r connmanager.HConn) {
+	handle := func(w, r net.Conn) {
 		b := pool.Get().([]byte)
 		defer pool.Put(b)
 		defer w.Close()
@@ -53,15 +46,14 @@ func Relay(leftConn, rightConn net.Conn) {
 			if err != nil {
 				break
 			}
-			r.AliveTime = time.Now().Unix()
 			_, err = w.Write(b[:n])
 			if err != nil {
 				break
 			}
 		}
 	}
-	go handle(right, left)
-	handle(left, right)
+	go handle(rightConn, leftConn)
+	handle(leftConn, rightConn)
 
 	rightConn.SetReadDeadline(time.Now())
 }
