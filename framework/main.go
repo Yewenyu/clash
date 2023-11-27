@@ -134,9 +134,11 @@ func SetBufferSize(tcp, udp int) {
 	pool.RelayBufferSize = tcp
 	pool.UDPBufferSize = udp
 }
-func SetMaxConnectCount(max, free int) {
+func SetMaxConnectCount(max, free, udpmax, udpfree int) {
 	N.MaxConnectCount = max
 	N.FreeConnectCount = free
+	statistic.MaxConnectCount = udpmax
+	statistic.FreeConnectCount = udpfree
 }
 
 type InfoCallBack interface {

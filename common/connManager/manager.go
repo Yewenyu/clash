@@ -6,18 +6,18 @@ import (
 	"time"
 )
 
+type ConnManagerInterface interface {
+	Close() error
+}
+
 type HConn struct {
 	AliveTime int64
-	net.Conn
+	ConnManagerInterface
 	IsClose bool
 	Mu      *sync.Mutex
 }
 
-func (c HConn) Close() error {
-	return c.Conn.Close()
-}
-
-func Handle(hchan chan *HConn, once *sync.Once, MaxConnectCount, FreeConnectCount int) {
+func Handle(hchan chan *HConn, once *sync.Once, MaxConnectCount, FreeConnectCount int, aliveTimeout int) {
 
 	h := func() {
 		go func() {
@@ -37,6 +37,11 @@ func Handle(hchan chan *HConn, once *sync.Once, MaxConnectCount, FreeConnectCoun
 
 					go func(conn *HConn) {
 						time.Sleep(time.Second * 1)
+
+						_, ok := conn.ConnManagerInterface.(net.PacketConn)
+						if ok {
+							print("")
+						}
 						conn.Close()
 
 					}(conns[0])
@@ -47,13 +52,17 @@ func Handle(hchan chan *HConn, once *sync.Once, MaxConnectCount, FreeConnectCoun
 					for _, c := range conns {
 						var canAdd = false
 						c.Mu.Lock()
-						if current-c.AliveTime < 1 && !c.IsClose {
+						if current-c.AliveTime < int64(aliveTimeout) && !c.IsClose {
 							canAdd = true
 						}
 						c.Mu.Unlock()
 						if canAdd {
 							newCon = append(newCon, c)
 						} else {
+							_, ok := c.ConnManagerInterface.(net.PacketConn)
+							if ok {
+								print("")
+							}
 							c.Close()
 						}
 

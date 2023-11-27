@@ -11,7 +11,7 @@ import (
 
 type BufferedConn struct {
 	r *bufio.Reader
-
+	net.Conn
 	connmanager.HConn
 }
 
@@ -33,13 +33,13 @@ func NewBufferedConn(c net.Conn) *BufferedConn {
 
 	handleOnce.Do(func() {
 		countChan = make(chan *connmanager.HConn, FreeConnectCount+5)
-		connmanager.Handle(countChan, nil, MaxConnectCount, FreeConnectCount)
+		connmanager.Handle(countChan, nil, MaxConnectCount, FreeConnectCount, 1)
 	})
 
 	r := readPool.Get().(*bufio.Reader)
 	r.Reset(c)
-	hc := connmanager.HConn{Conn: c, Mu: &sync.Mutex{}}
-	conn := &BufferedConn{r: r, HConn: hc}
+	hc := connmanager.HConn{ConnManagerInterface: c, Mu: &sync.Mutex{}}
+	conn := &BufferedConn{r: r, Conn: c, HConn: hc}
 	go func() {
 		countChan <- &conn.HConn
 	}()

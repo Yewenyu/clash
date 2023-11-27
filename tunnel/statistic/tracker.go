@@ -2,8 +2,10 @@ package statistic
 
 import (
 	"net"
+	"sync"
 	"time"
 
+	connmanager "github.com/Dreamacro/clash/common/connManager"
 	C "github.com/Dreamacro/clash/constant"
 
 	"github.com/gofrs/uuid/v5"
@@ -87,6 +89,7 @@ type udpTracker struct {
 	C.PacketConn `json:"-"`
 	*trackerInfo
 	manager *Manager
+	connmanager.HConn
 }
 
 func (ut *udpTracker) ID() string {
@@ -94,6 +97,9 @@ func (ut *udpTracker) ID() string {
 }
 
 func (ut *udpTracker) ReadFrom(b []byte) (int, net.Addr, error) {
+	ut.Mu.Lock()
+	ut.AliveTime = time.Now().Unix()
+	ut.Mu.Unlock()
 	n, addr, err := ut.PacketConn.ReadFrom(b)
 	download := int64(n)
 	ut.manager.PushDownloaded(download)
@@ -110,13 +116,35 @@ func (ut *udpTracker) WriteTo(b []byte, addr net.Addr) (int, error) {
 }
 
 func (ut *udpTracker) Close() error {
+	ut.Mu.Lock()
+	defer ut.Mu.Unlock()
+	if ut.IsClose {
+		return nil
+	}
+	ut.IsClose = true
 	ut.manager.Leave(ut)
 	return ut.PacketConn.Close()
 }
 
+var (
+	handleOnce       sync.Once
+	countChan        chan *connmanager.HConn
+	MaxConnectCount  = 70
+	FreeConnectCount = 30
+)
+
 func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, rule C.Rule) *udpTracker {
 	uuid, _ := uuid.NewV4()
 
+	handleOnce.Do(func() {
+		countChan = make(chan *connmanager.HConn, FreeConnectCount+5)
+		connmanager.Handle(countChan, nil, MaxConnectCount, FreeConnectCount, 2)
+	})
+
+	hc := connmanager.HConn{ConnManagerInterface: conn, Mu: &sync.Mutex{}}
+	go func() {
+		countChan <- &hc
+	}()
 	ut := &udpTracker{
 		PacketConn: conn,
 		manager:    manager,
@@ -129,6 +157,7 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 			UploadTotal:   atomic.NewInt64(0),
 			DownloadTotal: atomic.NewInt64(0),
 		},
+		HConn: hc,
 	}
 
 	if rule != nil {
