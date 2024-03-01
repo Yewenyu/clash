@@ -67,6 +67,7 @@ func main() {
 	// clash.SetBufferSize(1024, 1024*5)
 	// clash.SetGCPrecent(20)
 	clash.SetBufferSize(1024, 1024*10)
+	// go tool pprof -http=:8081 http://localhost:6060/debug/pprof/goroutine
 	go http.ListenAndServe(":6060", nil)
 
 	if configFile != "" {
