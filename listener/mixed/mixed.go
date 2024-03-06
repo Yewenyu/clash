@@ -4,6 +4,7 @@ import (
 	"net"
 
 	"github.com/Dreamacro/clash/common/cache"
+	connmanager "github.com/Dreamacro/clash/common/connManager"
 	N "github.com/Dreamacro/clash/common/net"
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/listener/http"
@@ -46,6 +47,10 @@ func New(addr string, in chan<- C.ConnContext) (C.Listener, error) {
 		addr:     addr,
 		cache:    cache.New(cache.WithAge(30)),
 	}
+	goLimiter = connmanager.CreateGoroutineLimiter(connmanager.MixedMaxCount, func(mht mixHandleType) {
+
+		handleConn1(mht.conn, mht.in, mht.cache)
+	})
 	go func() {
 		for {
 			c, err := ml.listener.Accept()
@@ -55,16 +60,26 @@ func New(addr string, in chan<- C.ConnContext) (C.Listener, error) {
 				}
 				continue
 			}
-			go handleConn(c, in, ml.cache)
+			handleConn(c, in, ml.cache)
 		}
 	}()
 
 	return ml, nil
 }
 
-func handleConn(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
-	conn.(*net.TCPConn).SetKeepAlive(true)
+type mixHandleType struct {
+	conn  net.Conn
+	in    chan<- C.ConnContext
+	cache *cache.LruCache
+}
 
+var goLimiter *connmanager.GoroutineLimiter[mixHandleType]
+
+func handleConn(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
+	goLimiter.HandleValue(mixHandleType{conn: conn, in: in, cache: cache})
+}
+func handleConn1(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
+	conn.(*net.TCPConn).SetKeepAlive(true)
 	bufConn := N.NewBufferedConn(conn)
 	head, err := bufConn.Peek(1)
 	if err != nil {
@@ -77,6 +92,7 @@ func handleConn(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
 	case socks5.Version:
 		socks.HandleSocks5(bufConn, in)
 	default:
+
 		http.HandleConn(bufConn, in, cache)
 	}
 }

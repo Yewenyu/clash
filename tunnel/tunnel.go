@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Dreamacro/clash/adapter/inbound"
+	connmanager "github.com/Dreamacro/clash/common/connManager"
 	"github.com/Dreamacro/clash/component/nat"
 	P "github.com/Dreamacro/clash/component/process"
 	"github.com/Dreamacro/clash/component/resolver"
@@ -114,7 +115,8 @@ func process() {
 
 	queue := tcpQueue
 	for conn := range queue {
-		go handleTCPConn(conn)
+		goLimiter.SetMaxCount(connmanager.TCPMaxCount)
+		handleTCPConn(conn)
 	}
 }
 
@@ -303,7 +305,16 @@ func handleUDPConn(packet *inbound.PacketAdapter) {
 	}()
 }
 
+var goLimiter = connmanager.CreateGoroutineLimiter(connmanager.TCPMaxCount, func(ctx C.ConnContext) {
+
+	handleTCPConn1(ctx)
+})
+
 func handleTCPConn(connCtx C.ConnContext) {
+	goLimiter.HandleValue(connCtx)
+}
+
+func handleTCPConn1(connCtx C.ConnContext) {
 	defer connCtx.Conn().Close()
 
 	metadata := connCtx.Metadata()

@@ -81,3 +81,50 @@ func Handle(hchan chan *HConn, once *sync.Once, MaxConnectCount, FreeConnectCoun
 		once.Do(h)
 	}
 }
+
+var (
+	MixedMaxCount = 60
+	TCPMaxCount   = 40
+)
+
+type GoroutineLimiter[T any] struct {
+	once      sync.Once
+	valueChan chan T
+	handle    func(T)
+	maxCount  int
+}
+
+func CreateGoroutineLimiter[T any](maxCount int, handle func(T)) *GoroutineLimiter[T] {
+	return &GoroutineLimiter[T]{
+		valueChan: make(chan T, 1),
+		handle:    handle,
+		maxCount:  maxCount,
+	}
+}
+
+func (v *GoroutineLimiter[T]) SetMaxCount(count int) {
+	v.maxCount = count
+}
+func (v *GoroutineLimiter[T]) queueHandle() {
+
+	countChan := make(chan int, v.maxCount)
+
+	for {
+		cs := <-v.valueChan
+
+		go func(cs T) {
+			v.handle(cs)
+			<-countChan
+		}(cs)
+		countChan <- 1
+	}
+}
+
+func (v *GoroutineLimiter[T]) HandleValue(value T) {
+
+	v.valueChan <- value
+	v.once.Do(func() {
+		go v.queueHandle()
+	})
+
+}

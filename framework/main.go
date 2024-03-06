@@ -21,6 +21,7 @@ import (
 
 	// "github.com/eycorsican/go-tun2socks/client"
 
+	connmanager "github.com/Dreamacro/clash/common/connManager"
 	N "github.com/Dreamacro/clash/common/net"
 	"github.com/Dreamacro/clash/common/pool"
 )
@@ -139,6 +140,10 @@ func SetMaxConnectCount(max, free, udpmax, udpfree int) {
 	N.FreeConnectCount = free
 	statistic.MaxConnectCount = udpmax
 	statistic.FreeConnectCount = udpfree
+}
+func SetMixMaxCount(mix, tcp int) {
+	connmanager.MixedMaxCount = mix
+	connmanager.TCPMaxCount = tcp
 }
 
 type InfoCallBack interface {
