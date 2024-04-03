@@ -16,6 +16,18 @@ func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, metadata *C.Metadata
 	if addr == nil {
 		return errors.New("udp addr invalid")
 	}
+	bytes := packet.Data()
+	if metadata.DstPort == 53 {
+		bytes := tRule.GetReponseDns(bytes)
+		if bytes != nil {
+			_, err := packet.WriteBack(bytes, addr)
+			if err == nil {
+				pc.Close()
+				return nil
+			}
+		}
+
+	}
 
 	if _, err := pc.WriteTo(packet.Data(), addr); err != nil {
 		return err
@@ -47,7 +59,9 @@ func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, 
 				fromUDPAddr.IP = fAddr.AsSlice()
 			}
 		}
-
+		if fromUDPAddr.Port == 53 {
+			tRule.HandleDns(buf[:n])
+		}
 		_, err = packet.WriteBack(buf[:n], &fromUDPAddr)
 		if err != nil {
 			return

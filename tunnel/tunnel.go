@@ -28,6 +28,7 @@ var (
 	udpQueue  = make(chan *inbound.PacketAdapter, 200)
 	natTable  = nat.New()
 	rules     []C.Rule
+	tRule     *TRule
 	proxies   = make(map[string]C.Proxy)
 	providers map[string]provider.ProxyProvider
 	configMux sync.RWMutex
@@ -65,6 +66,7 @@ func Rules() []C.Rule {
 func UpdateRules(newRules []C.Rule) {
 	configMux.Lock()
 	rules = newRules
+	tRule = CreateTRule(rules)
 	configMux.Unlock()
 }
 
@@ -425,7 +427,7 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 				}
 			}
 		}
-
+		_, _ = tRule.Match(metadata)
 		if rule.Match(metadata) {
 			adapter, ok := proxies[rule.Adapter()]
 			if !ok {

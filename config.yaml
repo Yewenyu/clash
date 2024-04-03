@@ -10,13 +10,13 @@ bind-address: '0.0.0.0'
 mode: rule
 
 
-log-level: info
+log-level: debug
 
 
 dns:
   enable: false
   listen: 0.0.0.0:53
-  # ipv6: false # when the false, response to AAAA questions will be empty
+  ipv6: true # when the false, response to AAAA questions will be empty
 
   # These nameservers are used to resolve the DNS nameserver hostnames below.
   # Specify IP addresses only
@@ -34,20 +34,26 @@ dns:
     - dhcp://en0 # dns from dhcp
     # - '8.8.8.8#en0'
 
-
 proxies:
-
-  - name: "ss1"
-    type: ss
-    server: 112.15.255.72
-    port: 44027
-    cipher: aes-256-gcm
-    password: 1OQAlApTy3Z5gG8J
-    udp: true
+- name: 'ss00'
+  type: ss
+  server: 45.79.227.196
+  port: 47363
+  cipher: aes-256-gcm
+  password: DIpmK83jddx3Rj81
 
 
-
+proxy-groups:
+- name: Proxy1
+  type: url-test
+  proxies:
+  - 'ss00'
+  url: https://www.baidu.com
+  interval: 5
 
 rules:
-  - GEOIP,CN,ss1
-  - MATCH,DIRECT
+  - DOMAIN-KEYWORD,ipinfo.io,DIRECT
+  - DOMAIN-KEYWORD,ipip.net,DIRECT
+  - DOMAIN-KEYWORD,ip111.cn,Proxy1
+  - IP-CIDR,1.1.1.1/32,DIRECT
+  - MATCH,Proxy1
