@@ -29,7 +29,7 @@ func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, metadata *C.Metadata
 
 	}
 
-	if _, err := pc.WriteTo(packet.Data(), addr); err != nil {
+	if _, err := pc.WriteTo(bytes, addr); err != nil {
 		return err
 	}
 	// reset timeout

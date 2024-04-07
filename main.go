@@ -76,12 +76,14 @@ func main() {
 		if !filepath.IsAbs(configFile) {
 			currentDir, _ := os.Getwd()
 			configFile = filepath.Join(currentDir, configFile)
+
 		}
 		C.SetConfig(configFile)
 	} else {
 		configFile := filepath.Join(C.Path.HomeDir(), C.Path.Config())
 		C.SetConfig(configFile)
 	}
+	// clash.CustomLogFile(C.Path.HomeDir()+"/log.log", 5, 0)
 
 	if err := config.Init(C.Path.HomeDir()); err != nil {
 		log.Fatalln("Initial configuration directory error: %s", err.Error())

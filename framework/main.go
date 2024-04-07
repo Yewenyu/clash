@@ -17,6 +17,7 @@ import (
 	"github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/hub/executor"
 	"github.com/Dreamacro/clash/log"
+	t "github.com/Dreamacro/clash/tunnel"
 	"github.com/Dreamacro/clash/tunnel/statistic"
 
 	// "github.com/eycorsican/go-tun2socks/client"
@@ -144,6 +145,9 @@ func SetMaxConnectCount(max, free, udpmax, udpfree int) {
 func SetMixMaxCount(mix, tcp int) {
 	connmanager.MixedMaxCount = mix
 	connmanager.TCPMaxCount = tcp
+}
+func DNSSize(size int) {
+	t.DnsCachSize = size
 }
 
 type InfoCallBack interface {

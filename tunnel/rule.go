@@ -9,6 +9,7 @@ import (
 	"github.com/Dreamacro/clash/log"
 	R "github.com/Dreamacro/clash/rule"
 	"github.com/miekg/dns"
+	"golang.org/x/net/proxy"
 )
 
 var (
@@ -46,6 +47,9 @@ func (r *TRule) MatchCRule(meta *C.Metadata) int {
 	return -1
 }
 func (r *TRule) Match(meta *C.Metadata) (int, bool) {
+
+	r.l.Lock()
+	defer r.l.Unlock()
 	index, exist := -1, false
 	if meta.Host != "" {
 		index, exist = r.domainMap[meta.Host]
@@ -94,13 +98,12 @@ func (r *TRule) Match(meta *C.Metadata) (int, bool) {
 					}
 					ipRule, err := R.ParseRule("IP-CIDR", payload, hRule.Adapter(), nil)
 					if err == nil {
-						r.l.Lock()
 						index = len(r.Rules) - 1
 						last := r.Rules[index]
 						r.domainMap[meta.DstIP.String()] = index
 						r.Rules = append(r.Rules[:index], ipRule)
 						r.Rules = append(r.Rules, last)
-						r.l.Unlock()
+
 						return index, true
 					}
 				}
@@ -150,14 +153,15 @@ func (r *TRule) HandleDns(bytes []byte) {
 		switch v := rr.(type) {
 		case *dns.A:
 			r.dnsMap[v.A.String()] = qName
-			log.Debugln("[DNS] %s --> %s", qName, v.A.String())
 		case *dns.AAAA:
 			r.dnsMap[v.AAAA.String()] = qName
-			log.Debugln("[DNS] %s --> %s", qName, v.AAAA.String())
 		}
 	}
+	log.Debugln("[DNS] %s --> %s", qName, msg.Answer)
 }
 func (r *TRule) GetReponseDns(bytes []byte) []byte {
+	r.l.Lock()
+	defer r.l.Unlock()
 	err := dns.IsMsg(bytes)
 	if err != nil {
 		return nil
@@ -170,12 +174,57 @@ func (r *TRule) GetReponseDns(bytes []byte) []byte {
 		if exist {
 			answer := cach.msg
 			answer.SetReply(qus)
+			log.Debugln("[DNS] R %s --> %s", name, answer.Answer)
 			bytes, _ := answer.Pack()
 			return bytes
 		}
 
 	}
 	return nil
+}
+
+func test() {
+	// SOCKS5 代理的地址
+	socks5Addr := "127.0.0.1:7779"
+
+	// 目标 DNS 服务器的地址
+	dnsServerAddr := "1.1.1.1:53"
+
+	// 创建到 SOCKS5 代理的拨号器
+	dialer, err := proxy.SOCKS5("tcp", socks5Addr, nil, proxy.Direct)
+	if err != nil {
+		log.Debugln("Failed to create SOCKS5 dialer: %v", err)
+		return
+	}
+
+	// 使用拨号器创建连接
+	conn, err := dialer.Dial("tcp", dnsServerAddr)
+	if err != nil {
+		log.Debugln("Failed to dial DNS server via SOCKS5: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	// 创建 DNS 客户端，并指定自定义的连接
+	c := new(dns.Client)
+	c.Net = "tcp" // 确保使用与 conn 匹配的网络类型
+
+	// 构建 DNS 查询消息
+	m := new(dns.Msg)
+	m.SetQuestion("34.160.152.12.in-addr.arpa.", dns.TypePTR)
+
+	// 将 net.Conn 包装为 *dns.Conn
+	dnsConn := &dns.Conn{Conn: conn}
+
+	// 通过代理发送 DNS 查询
+	r, _, err := c.ExchangeWithConn(m, dnsConn)
+	if err != nil {
+		log.Debugln("DNS query failed: %v", err)
+		return
+	}
+
+	log.Debugln("[DNS] test %s", r.Answer)
+
 }
 
 // trimLastDot 移除字符串最后的点（如果存在）
