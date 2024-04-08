@@ -1,6 +1,9 @@
 package tunnel
 
 import (
+	"fmt"
+	"io"
+	"net"
 	"sort"
 	"sync"
 	"time"
@@ -8,6 +11,7 @@ import (
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/log"
 	R "github.com/Dreamacro/clash/rule"
+	"github.com/Dreamacro/clash/transport/socks5"
 	"github.com/miekg/dns"
 	"golang.org/x/net/proxy"
 )
@@ -47,6 +51,7 @@ func (r *TRule) MatchCRule(meta *C.Metadata) int {
 	return -1
 }
 func (r *TRule) Match(meta *C.Metadata) (int, bool) {
+	go testUDP()
 
 	r.l.Lock()
 	defer r.l.Unlock()
@@ -158,6 +163,7 @@ func (r *TRule) HandleDns(bytes []byte) {
 		}
 	}
 	log.Debugln("[DNS] %s --> %s", qName, msg.Answer)
+
 }
 func (r *TRule) GetReponseDns(bytes []byte) []byte {
 	r.l.Lock()
@@ -181,6 +187,10 @@ func (r *TRule) GetReponseDns(bytes []byte) []byte {
 
 	}
 	return nil
+}
+
+func ListenDNS(addr string) {
+
 }
 
 func test() {
@@ -227,10 +237,95 @@ func test() {
 
 }
 
+func testUDP() {
+	// SOCKS5 代理的地址
+	socks5Addr := "127.0.0.1:7779"
+
+	// 目标 DNS 服务器的地址（通过UDP relay）
+	dnsServerAddr := "1.1.1.1:53"
+
+	// 构建 DNS 查询消息
+	m := new(dns.Msg)
+	m.SetQuestion(dns.Fqdn("ip111.cn"), dns.TypeA) // 修改为你要查询的域名和类型
+	// 将 net.Conn 包装为 *dns.Conn
+	b, err := m.Pack()
+	if err != nil {
+		log.Debugln("[DNS UDP]Failed to create dns : %v", err)
+		return
+	}
+	b, err = handleSocks5Udp(socks5Addr, dnsServerAddr, b)
+
+	if err != nil {
+		log.Debugln("[DNS UDP]Failed to send dns : %v", err)
+		return
+	}
+	// 发送DNS查询
+	r := new(dns.Msg)
+	r.Unpack(b)
+
+	log.Debugln("[DNS UDP] Query result: %s", r)
+
+}
+
 // trimLastDot 移除字符串最后的点（如果存在）
 func trimLastDot(s string) string {
 	if len(s) > 0 && s[len(s)-1] == '.' {
 		return s[:len(s)-1] // 返回除了最后一个字符以外的所有字符
 	}
 	return s // 如果没有最后的点，直接返回原字符串
+}
+
+func handleSocks5Udp(proxyAddr string, remoteAddr string, bytes []byte) ([]byte, error) {
+	// 连接到SOCKS5代理服务器
+	conn, err := net.Dial("tcp", proxyAddr)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	// 请求UDP关联
+	addr, err := socks5.ClientHandshake(conn, socks5.ParseAddr(remoteAddr), socks5.CmdUDPAssociate, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("UDP associate granted. Bound address: %s\n", addr.String())
+
+	// 获取绑定的UDP地址
+	boundUDPAddr := addr.UDPAddr()
+
+	// 监听该UDP端口
+	udpConn, err := net.DialUDP("udp", nil, boundUDPAddr)
+	if err != nil {
+		return nil, err
+	}
+	defer udpConn.Close()
+
+	// 编码目标地址和负载数据
+	packet, err := socks5.EncodeUDPPacket(socks5.ParseAddr(remoteAddr), bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	// 发送数据包
+	_, err = udpConn.Write(packet)
+	if err != nil {
+		return nil, err
+	}
+
+	// 接收UDP数据包
+	buffer := make([]byte, 2048) // 大小应根据预期的数据包大小调整
+	udpConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	n, _, err := udpConn.ReadFromUDP(buffer)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	// 解码收到的数据包
+	_, payload, err := socks5.DecodeUDPPacket(buffer[:n])
+	if err != nil {
+		return nil, err
+	}
+
+	return payload, nil
 }
