@@ -9,8 +9,10 @@ import "C"
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"runtime/debug"
+	"time"
 
 	"github.com/Dreamacro/clash/adapter/provider"
 	"github.com/Dreamacro/clash/config"
@@ -157,6 +159,82 @@ type InfoCallBack interface {
 func SetCallBack(callBack InfoCallBack) {
 	provider.HealthCheckCallBack = func(result string) {
 		callBack.HealthTest(result)
+	}
+}
+
+func ListenUDP(targetAddr, localAddr string) {
+	// 服务器监听的地址
+	serverAddr := localAddr
+	// 第三方服务的地址
+	thirdPartyAddr := targetAddr
+	serverUDPAddr, err := net.ResolveUDPAddr("udp", serverAddr)
+	if err != nil {
+		fmt.Println("解析服务器地址出错：", err)
+		os.Exit(1)
+	}
+
+	thirdPartyUDPAddr, err := net.ResolveUDPAddr("udp", thirdPartyAddr)
+	if err != nil {
+		fmt.Println("解析第三方服务地址出错：", err)
+		os.Exit(1)
+	}
+
+	conn, err := net.ListenUDP("udp", serverUDPAddr)
+	if err != nil {
+		fmt.Println("服务器监听出错：", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	fmt.Printf("服务器正在监听 %s\n", serverAddr)
+	fmt.Printf("准备将消息转发到 %s\n", thirdPartyAddr)
+
+	buffer := make([]byte, 1024)
+
+	for {
+		// 读取来自原始发送方的消息
+		n, origAddr, err := conn.ReadFromUDP(buffer)
+		if err != nil {
+			fmt.Println("读取错误：", err)
+			continue
+		}
+		message := make([]byte, n)
+		copy(message, buffer[:n])
+		// 将消息转发到第三方服务
+		forwardConn, err := net.DialUDP("udp", nil, thirdPartyUDPAddr)
+		go func(message []byte, conn *net.UDPConn) {
+			if err != nil {
+				fmt.Printf("连接到第三方服务失败： %v\n", err)
+				return
+			}
+			_, err = conn.Write(message)
+			if err != nil {
+				fmt.Println("转发到第三方服务失败：", err)
+				return
+			}
+		}(message, forwardConn)
+
+		go func(forwardConn *net.UDPConn, conn *net.UDPConn, oAddr *net.UDPAddr) {
+			replyBuffer := make([]byte, 1024)
+			defer forwardConn.Close()
+			for {
+				forwardConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				replyLen, _, err := forwardConn.ReadFromUDP(replyBuffer)
+				if err != nil {
+					fmt.Println("接收第三方服务回复失败：", err)
+					break
+				}
+
+				// 将第三方服务的回复发送回原始发送方
+				_, err = conn.WriteToUDP(replyBuffer[:replyLen], oAddr)
+				if err != nil {
+					fmt.Println("发送回复到原始发送方失败：", err)
+					break
+				}
+				fmt.Printf("消息已从第三方服务回复到原始发送方 %s\n", oAddr)
+			}
+		}(forwardConn, conn, origAddr)
+
 	}
 }
 
