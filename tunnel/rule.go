@@ -51,7 +51,6 @@ func (r *TRule) MatchCRule(meta *C.Metadata) int {
 	return -1
 }
 func (r *TRule) Match(meta *C.Metadata) (int, bool) {
-	go testUDP()
 
 	r.l.Lock()
 	defer r.l.Unlock()
@@ -134,7 +133,7 @@ func (r *TRule) HandleDns(bytes []byte) {
 	defer r.l.Unlock()
 	var qName = ""
 	for _, q := range msg.Question {
-		log.Debugln("[DNS] Question %s ", q.Name)
+		log.Debugln("[DNS handle] Question %s ", q.Name)
 		qName = trimLastDot(q.Name)
 	}
 	if len(msg.Answer) > 0 {
@@ -162,7 +161,7 @@ func (r *TRule) HandleDns(bytes []byte) {
 			r.dnsMap[v.AAAA.String()] = qName
 		}
 	}
-	log.Debugln("[DNS] %s --> %s", qName, msg.Answer)
+	log.Debugln("[DNS handle] %s --> %s", qName, msg.Answer)
 
 }
 func (r *TRule) GetReponseDns(bytes []byte) []byte {
@@ -180,7 +179,7 @@ func (r *TRule) GetReponseDns(bytes []byte) []byte {
 		if exist {
 			answer := cach.msg
 			answer.SetReply(qus)
-			log.Debugln("[DNS] R %s --> %s", name, answer.Answer)
+			log.Debugln("[DNS Cach Reponse] %s --> %s", name, answer.Answer)
 			bytes, _ := answer.Pack()
 			return bytes
 		}
@@ -189,29 +188,103 @@ func (r *TRule) GetReponseDns(bytes []byte) []byte {
 	return nil
 }
 
-func ListenDNS(addr string) {
+func ListenDNS(localAddr, socks5Addr string, dnsAddrs []string) {
 
+	// 服务器监听的地址
+	serverAddr := localAddr
+
+	serverUDPAddr, err := net.ResolveUDPAddr("udp", serverAddr)
+	if err != nil {
+		log.Fatalln("DNS Listener err: %s", err)
+		return
+	}
+
+	conn, err := net.ListenUDP("udp", serverUDPAddr)
+	if err != nil {
+		log.Fatalln("DNS Listener err: %s", err)
+		return
+	}
+	defer conn.Close()
+
+	log.Infoln("DNS Listening at %s", serverAddr)
+
+	buffer := make([]byte, 4096)
+
+	if len(dnsAddrs) == 0 {
+		dnsAddrs = []string{"8.8.8.8"}
+	}
+
+	for {
+		// 读取来自原始发送方的消息
+		n, origAddr, err := conn.ReadFromUDP(buffer)
+		if err != nil {
+			log.Debugln("[DNS] read err : %v", err)
+			continue
+		}
+		msg := new(dns.Msg)
+		err = msg.Unpack(buffer[:n])
+		if err != nil {
+			log.Debugln("[DNS] unpack err : %s", origAddr)
+			continue
+		}
+		dnsBytes, _ := msg.Pack()
+		go func(dnsBytes []byte, conn *net.UDPConn) {
+			var o sync.Once
+			rChan := make(chan []byte, 1) // 使用buffered channel
+
+			handle := func(bytes []byte) {
+				o.Do(func() {
+					rChan <- bytes
+				})
+			}
+
+			for _, addr := range dnsAddrs {
+				addr := addr + ":53"
+				go func(addr string) {
+					bytes, err := handleTCPDNS(socks5Addr, addr, dnsBytes)
+					if err != nil {
+						log.Debugln("%v", err)
+						return
+					}
+					handle(bytes)
+				}(addr)
+
+				go func(addr string) {
+					bytes, err := handleUDPDNS(socks5Addr, addr, dnsBytes)
+					if err != nil {
+						log.Debugln("%v", err)
+						return
+					}
+					handle(bytes)
+				}(addr)
+			}
+
+			select {
+			case response, ok := <-rChan:
+				if ok {
+					_, _ = conn.WriteToUDP(response, origAddr)
+				}
+			case <-time.After(5 * time.Second):
+				break
+			}
+			close(rChan)
+		}(dnsBytes, conn)
+
+	}
 }
 
-func test() {
-	// SOCKS5 代理的地址
-	socks5Addr := "127.0.0.1:7779"
-
-	// 目标 DNS 服务器的地址
-	dnsServerAddr := "1.1.1.1:53"
+func handleTCPDNS(socks5Addr, dnsServerAddr string, dnsBytes []byte) ([]byte, error) {
 
 	// 创建到 SOCKS5 代理的拨号器
 	dialer, err := proxy.SOCKS5("tcp", socks5Addr, nil, proxy.Direct)
 	if err != nil {
-		log.Debugln("Failed to create SOCKS5 dialer: %v", err)
-		return
+		return nil, fmt.Errorf("[DNS TCP]Failed to create SOCKS5 dialer: %v", err)
 	}
 
 	// 使用拨号器创建连接
 	conn, err := dialer.Dial("tcp", dnsServerAddr)
 	if err != nil {
-		log.Debugln("Failed to dial DNS server via SOCKS5: %v", err)
-		return
+		return nil, fmt.Errorf("[DNS TCP]Failed to dial DNS server via SOCKS5: %v", err)
 	}
 	defer conn.Close()
 
@@ -221,49 +294,42 @@ func test() {
 
 	// 构建 DNS 查询消息
 	m := new(dns.Msg)
-	m.SetQuestion("34.160.152.12.in-addr.arpa.", dns.TypePTR)
+	err = m.Unpack(dnsBytes)
+	if err != nil {
+		return nil, fmt.Errorf("[DNS TCP]Failed to unpack DNS : %v", err)
+	}
+	// m.SetQuestion(dns.Fqdn("ipinfo.io"), dns.TypeAAAA)
 
 	// 将 net.Conn 包装为 *dns.Conn
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	dnsConn := &dns.Conn{Conn: conn}
 
 	// 通过代理发送 DNS 查询
 	r, _, err := c.ExchangeWithConn(m, dnsConn)
 	if err != nil {
-		log.Debugln("DNS query failed: %v", err)
-		return
+		return nil, fmt.Errorf("[DNS TCP] query failed: %v", err)
 	}
 
-	log.Debugln("[DNS] test %s", r.Answer)
+	log.Debugln("[DNS TCP] Query result: %s", r.Answer)
+
+	return r.Pack()
 
 }
 
-func testUDP() {
-	// SOCKS5 代理的地址
-	socks5Addr := "127.0.0.1:7779"
+func handleUDPDNS(socks5Addr, dnsServerAddr string, dnsBytes []byte) ([]byte, error) {
 
-	// 目标 DNS 服务器的地址（通过UDP relay）
-	dnsServerAddr := "1.1.1.1:53"
-
-	// 构建 DNS 查询消息
-	m := new(dns.Msg)
-	m.SetQuestion(dns.Fqdn("ip111.cn"), dns.TypeA) // 修改为你要查询的域名和类型
-	// 将 net.Conn 包装为 *dns.Conn
-	b, err := m.Pack()
-	if err != nil {
-		log.Debugln("[DNS UDP]Failed to create dns : %v", err)
-		return
-	}
-	b, err = handleSocks5Udp(socks5Addr, dnsServerAddr, b)
+	b, err := handleSocks5Udp(socks5Addr, dnsServerAddr, dnsBytes)
 
 	if err != nil {
-		log.Debugln("[DNS UDP]Failed to send dns : %v", err)
-		return
+		return nil, fmt.Errorf("[DNS UDP]Failed to send dns : %v", err)
 	}
 	// 发送DNS查询
 	r := new(dns.Msg)
 	r.Unpack(b)
 
 	log.Debugln("[DNS UDP] Query result: %s", r)
+
+	return b, err
 
 }
 
@@ -289,17 +355,16 @@ func handleSocks5Udp(proxyAddr string, remoteAddr string, bytes []byte) ([]byte,
 		return nil, err
 	}
 
-	fmt.Printf("UDP associate granted. Bound address: %s\n", addr.String())
-
 	// 获取绑定的UDP地址
 	boundUDPAddr := addr.UDPAddr()
 
 	// 监听该UDP端口
 	udpConn, err := net.DialUDP("udp", nil, boundUDPAddr)
+	defer udpConn.Close()
+
 	if err != nil {
 		return nil, err
 	}
-	defer udpConn.Close()
 
 	// 编码目标地址和负载数据
 	packet, err := socks5.EncodeUDPPacket(socks5.ParseAddr(remoteAddr), bytes)

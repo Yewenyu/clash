@@ -17,6 +17,7 @@ import (
 	"github.com/Dreamacro/clash/hub"
 	"github.com/Dreamacro/clash/hub/executor"
 	"github.com/Dreamacro/clash/log"
+	"github.com/Dreamacro/clash/tunnel"
 
 	"go.uber.org/automaxprocs/maxprocs"
 )
@@ -69,6 +70,7 @@ func main() {
 	clash.SetMixMaxCount(100, 70)
 	clash.SetMaxConnectCount(200, 200, 200, 200)
 	clash.SetBufferSize(1024, 1024*10)
+	go tunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", []string{"8.8.8.8"})
 	// go tool pprof -http=:8081 http://localhost:6060/debug/pprof/goroutine
 	go http.ListenAndServe(":6060", nil)
 
