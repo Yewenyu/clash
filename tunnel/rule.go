@@ -184,7 +184,7 @@ func (r *TRule) getReponseDns(bytes []byte) ([]byte, bool) {
 			}
 
 			answer = buildDNSResponseFromCache(qus, answer)
-			if answer == nil {
+			if answer == nil || len(answer.Answer) == 0 {
 				return nil, true
 			}
 			bytes, _ := answer.Pack()
@@ -411,7 +411,8 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 		dohQuery = true
 	}
 	dnsCount += len(dohHost)
-
+	initTime := time.Now().Unix()
+	dnsCanHandle := true
 	var golimiter = connmanager.CreateGoroutineLimiter(MaxDnsConnectCount, func(v DNSV) {
 
 		var l sync.Mutex
@@ -453,6 +454,12 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 		r, canUpdate := tRule.getReponseDns(dnsBytes)
 		if r != nil {
 			_, _ = v.conn.WriteToUDP(r, v.oAddr)
+			l.Lock()
+			dnsCanHandle = time.Now().Unix()-initTime < int64(DnsCachTime)
+			l.Unlock()
+			if dnsCanHandle {
+				tRule.handleDns(r)
+			}
 		}
 		if canUpdate {
 			h := func(addr, mode string, f func(socks5Addr string, addr string, dnsBytes []byte) ([]byte, error)) {
@@ -495,7 +502,7 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 
 	})
 
-	os.RemoveAll(dnsDir())
+	// os.RemoveAll(dnsDir())
 	lastTestTime := time.Now().Unix()
 	for {
 		// 读取来自原始发送方的消息
