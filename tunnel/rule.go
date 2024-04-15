@@ -224,9 +224,9 @@ func buildDNSResponseFromCache(req *dns.Msg, cache *dns.Msg) *dns.Msg {
 	}
 
 	// 可以选择修改缓存响应，例如更新TTL
-	for _, ans := range cache.Answer {
-		ans.Header().Ttl = 300 // 设置或重置TTL
-	}
+	// for _, ans := range cache.Answer {
+	// 	ans.Header().Ttl = 300 // 设置或重置TTL
+	// }
 
 	// 设置回复位
 	cache.SetReply(req)
@@ -502,7 +502,10 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 
 	})
 
-	// os.RemoveAll(dnsDir())
+	if !cach {
+		os.RemoveAll(dnsDir())
+	}
+
 	lastTestTime := time.Now().Unix()
 	for {
 		// 读取来自原始发送方的消息
