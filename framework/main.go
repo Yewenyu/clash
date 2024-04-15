@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/Dreamacro/clash/adapter/provider"
@@ -148,8 +149,8 @@ func SetMixMaxCount(mix, tcp int) {
 	connmanager.MixedMaxCount = mix
 	connmanager.TCPMaxCount = tcp
 }
-func DNSSize(size int) {
-	t.DnsCachSize = size
+func DNSCachTime(second int) {
+	t.DnsCachTime = second
 }
 
 type InfoCallBack interface {
@@ -160,6 +161,11 @@ func SetCallBack(callBack InfoCallBack) {
 	provider.HealthCheckCallBack = func(result string) {
 		callBack.HealthTest(result)
 	}
+}
+
+func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs, dohHosts string, maxDnsConnectCount int) {
+	t.MaxDnsConnectCount = maxDnsConnectCount
+	go t.ListenDNS(localAddr, socks5Addr, mode, cach, strings.Split(dnsAddrs, ","), strings.Split(dohHosts, ","))
 }
 
 func ListenUDP(targetAddr, localAddr string) {

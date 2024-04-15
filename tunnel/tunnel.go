@@ -24,11 +24,11 @@ import (
 )
 
 var (
-	tcpQueue  = make(chan C.ConnContext, 200)
-	udpQueue  = make(chan *inbound.PacketAdapter, 200)
-	natTable  = nat.New()
-	rules     []C.Rule
-	tRule     *TRule
+	tcpQueue = make(chan C.ConnContext, 200)
+	udpQueue = make(chan *inbound.PacketAdapter, 200)
+	natTable = nat.New()
+	rules    []C.Rule
+
 	proxies   = make(map[string]C.Proxy)
 	providers map[string]provider.ProxyProvider
 	configMux sync.RWMutex
