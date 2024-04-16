@@ -31,27 +31,13 @@ func NewBufferedConn(c net.Conn) *BufferedConn {
 		return bc
 	}
 
-	handleOnce.Do(func() {
-		countChan = make(chan *connmanager.HConn, FreeConnectCount+5)
-		connmanager.Handle(countChan, nil, MaxConnectCount, FreeConnectCount, 1)
-	})
-
 	r := readPool.Get().(*bufio.Reader)
 	r.Reset(c)
 	hc := connmanager.HConn{ConnManagerInterface: c, Mu: &sync.Mutex{}}
 	conn := &BufferedConn{r: r, Conn: c, HConn: hc}
-	go func() {
-		countChan <- &conn.HConn
-	}()
+
 	return conn
 }
-
-var (
-	handleOnce       sync.Once
-	MaxConnectCount  = 70
-	FreeConnectCount = 30
-	countChan        chan *connmanager.HConn
-)
 
 func (c *BufferedConn) Close() error {
 	c.Mu.Lock()

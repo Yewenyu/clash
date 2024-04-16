@@ -54,6 +54,4 @@ func Relay(leftConn, rightConn net.Conn) {
 	}
 	go handle(rightConn, leftConn)
 	handle(leftConn, rightConn)
-
-	rightConn.SetReadDeadline(time.Now())
 }

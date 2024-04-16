@@ -126,25 +126,11 @@ func (ut *udpTracker) Close() error {
 	return ut.PacketConn.Close()
 }
 
-var (
-	handleOnce       sync.Once
-	countChan        chan *connmanager.HConn
-	MaxConnectCount  = 70
-	FreeConnectCount = 30
-)
-
 func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, rule C.Rule) *udpTracker {
 	uuid, _ := uuid.NewV4()
 
-	handleOnce.Do(func() {
-		countChan = make(chan *connmanager.HConn, FreeConnectCount+5)
-		connmanager.Handle(countChan, nil, MaxConnectCount, FreeConnectCount, 2)
-	})
-
 	hc := connmanager.HConn{ConnManagerInterface: conn, Mu: &sync.Mutex{}}
-	go func() {
-		countChan <- &hc
-	}()
+
 	ut := &udpTracker{
 		PacketConn: conn,
 		manager:    manager,

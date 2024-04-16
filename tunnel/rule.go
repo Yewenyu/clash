@@ -502,10 +502,10 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 
 	})
 
-	if !cach {
-		os.RemoveAll(dnsDir())
-	}
+	// if !cach {
 
+	// }
+	os.RemoveAll(dnsDir())
 	lastTestTime := time.Now().Unix()
 	for {
 		// 读取来自原始发送方的消息

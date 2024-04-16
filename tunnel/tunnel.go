@@ -383,7 +383,7 @@ func handleTCPConn1(connCtx C.ConnContext) {
 			metadata.RemoteAddress(),
 		)
 	}
-
+	remoteConn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	handleSocket(connCtx, remoteConn)
 }
 
