@@ -99,11 +99,17 @@ func SetMode(m TunnelMode) {
 }
 
 // processUDP starts a loop to handle udp packet
-func processUDP() {
-	queue := udpQueue
-	for conn := range queue {
-		handleUDPConn(conn)
+func ProcessUDP(num int) {
+
+	for i := 0; i < num; i++ {
+		go func() {
+			queue := udpQueue
+			for conn := range queue {
+				handleUDPConn(conn)
+			}
+		}()
 	}
+
 }
 
 func process() {
@@ -111,9 +117,7 @@ func process() {
 	if num := runtime.GOMAXPROCS(0); num > numUDPWorkers {
 		numUDPWorkers = num
 	}
-	for i := 0; i < numUDPWorkers; i++ {
-		go processUDP()
-	}
+	go ProcessUDP(numUDPWorkers)
 
 	queue := tcpQueue
 	for conn := range queue {

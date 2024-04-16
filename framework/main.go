@@ -25,6 +25,9 @@ import (
 
 	// "github.com/eycorsican/go-tun2socks/client"
 
+	"net/http"
+	_ "net/http/pprof"
+
 	connmanager "github.com/Dreamacro/clash/common/connManager"
 	N "github.com/Dreamacro/clash/common/net"
 	"github.com/Dreamacro/clash/common/pool"
@@ -145,9 +148,10 @@ func SetMaxConnectCount(max, free, udpmax, udpfree int) {
 	statistic.MaxConnectCount = udpmax
 	statistic.FreeConnectCount = udpfree
 }
-func SetMixMaxCount(mix, tcp int) {
+func SetMixMaxCount(mix, tcp, udp int) {
 	connmanager.MixedMaxCount = mix
 	connmanager.TCPMaxCount = tcp
+	t.ProcessUDP(udp)
 }
 func DNSCachTime(second int) {
 	t.DnsCachTime = second
@@ -242,6 +246,10 @@ func ListenUDP(targetAddr, localAddr string) {
 		}(forwardConn, conn, origAddr)
 
 	}
+}
+
+func PProf(address string) {
+	go http.ListenAndServe(address, nil)
 }
 
 // func StartTun2socks(tunfd int, host string, port int, mtu int, udpEnable bool, udpTimeout int) string {
