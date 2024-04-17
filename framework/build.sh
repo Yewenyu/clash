@@ -21,6 +21,7 @@ if [ "$1" == "debug" ]; then
     echo "Building in debug mode..."
     export GOGCFLAGS="-N -l"
 else
+    unset GOGCFLAGS
     echo "Building in release mode..."
 fi
 

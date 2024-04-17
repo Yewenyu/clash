@@ -524,6 +524,7 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 			log.Debugln("[DNS] unpack err : %s", origAddr)
 			continue
 		}
+		log.Debugln("[DNS Start] %v", msg.Question)
 		dnsBytes, _ := msg.Pack()
 		golimiter.HandleValue(DNSV{oAddr: origAddr, conn: conn, bytes: dnsBytes})
 	}
