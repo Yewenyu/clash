@@ -394,9 +394,29 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 	tcpQuery := false
 	dohQuery := false
 	m := 0
+	var udpDnsHandles []*UDPConnection
 	if strings.Contains(mode, "udp") {
 		udpQuery = true
 		m += 1
+		recvChan := make(chan *DNSInfo, 20)
+		for _, addr := range dnsAddrs {
+			udpDnsHandle, _ := NewUDPConnection(socks5Addr, addr+":53")
+			udpDnsHandle.recvChan = recvChan
+			udpDnsHandles = append(udpDnsHandles, udpDnsHandle)
+		}
+
+		go func() {
+			for {
+
+				response := <-recvChan
+				h, _ := response.handle.(func(bytes []byte, err error))
+				if response.err != nil {
+					response.bytes = nil
+				}
+				h(response.bytes, response.err)
+			}
+		}()
+
 	}
 	if strings.Contains(mode, "tcp") {
 		tcpQuery = true
@@ -441,7 +461,7 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 			_ = msg.Unpack(bytes)
 
 			if len(msg.Answer) == 0 {
-				log.Debugln("[DNS response %s] empty answer %s from %s", mode, msg.Question[0].Name, dnsAddr)
+				log.Debugln("[DNS response %s] empty answer %v from %s", mode, msg.Question, dnsAddr)
 				return
 			}
 			log.Debugln("[DNS response %s] answer %s from %s", mode, msg.Answer, dnsAddr)
@@ -469,14 +489,24 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 				}
 				handle(bytes, addr, mode)
 			}
-			for _, addr := range dnsAddrs {
+			for index, addr := range dnsAddrs {
 				addr53 := addr + ":53"
 
 				if tcpQuery {
 					go h(addr53, "tcp", handleTCPDNS)
 				}
 				if udpQuery {
-					go h(addr53, "udp", handleUDPDNS)
+					udpDnsHandle := udpDnsHandles[index]
+					b := make([]byte, len(dnsBytes))
+					copy(b, dnsBytes)
+					udpDnsHandle.sendChan <- &DNSInfo{
+						remoteAddr: addr53, bytes: b, err: nil,
+						handle: func(bytes []byte, err error) {
+							h(addr53, "udp", func(socks5Addr, addr string, dnsBytes []byte) ([]byte, error) {
+								return bytes, err
+							})
+						},
+					}
 				}
 			}
 			if dohQuery {
@@ -610,14 +640,6 @@ func handleUDPDNS(socks5Addr, dnsServerAddr string, dnsBytes []byte) ([]byte, er
 
 }
 
-// trimLastDot 移除字符串最后的点（如果存在）
-func trimLastDot(s string) string {
-	if len(s) > 0 && s[len(s)-1] == '.' {
-		return s[:len(s)-1] // 返回除了最后一个字符以外的所有字符
-	}
-	return s // 如果没有最后的点，直接返回原字符串
-}
-
 func handleSocks5Udp(proxyAddr string, remoteAddr string, bytes []byte) ([]byte, error) {
 	// 连接到SOCKS5代理服务器
 	conn, err := net.Dial("tcp", proxyAddr)
@@ -670,6 +692,14 @@ func handleSocks5Udp(proxyAddr string, remoteAddr string, bytes []byte) ([]byte,
 	}
 
 	return payload, nil
+}
+
+// trimLastDot 移除字符串最后的点（如果存在）
+func trimLastDot(s string) string {
+	if len(s) > 0 && s[len(s)-1] == '.' {
+		return s[:len(s)-1] // 返回除了最后一个字符以外的所有字符
+	}
+	return s // 如果没有最后的点，直接返回原字符串
 }
 
 func doDNSQuery(socks5Proxy, addr string, dnsBytes []byte) ([]byte, error) {
@@ -725,4 +755,141 @@ func RemoveDuplicates[T any, K comparable](slice []T, keyFunc func(T) K) []T {
 	}
 
 	return result
+}
+
+type DNSInfo struct {
+	remoteAddr string
+	bytes      []byte
+	err        error
+	handle     interface{}
+}
+
+type UDPConnection struct {
+	conn                  *net.UDPConn
+	sendChan              chan *DNSInfo
+	recvChan              chan *DNSInfo
+	queryMap              map[uint16]*DNSInfo
+	mapMutex              sync.Mutex
+	wg                    sync.WaitGroup
+	proxyAddr, remoteAddr string
+}
+
+func NewUDPConnection(proxyAddr string, remoteAddr string) (*UDPConnection, error) {
+
+	uc := &UDPConnection{
+		proxyAddr:  proxyAddr,
+		remoteAddr: remoteAddr,
+		sendChan:   make(chan *DNSInfo, 20),
+		recvChan:   make(chan *DNSInfo),
+		queryMap:   make(map[uint16]*DNSInfo),
+	}
+
+	uc.wg.Add(2)
+	go uc.sender()
+	go uc.receiver()
+
+	return uc, nil
+}
+func (uc *UDPConnection) initConnect() {
+	tcpConn, err := net.Dial("tcp", uc.proxyAddr)
+	if err != nil {
+		return
+	}
+	addr, err := socks5.ClientHandshake(tcpConn, socks5.ParseAddr(uc.remoteAddr), socks5.CmdUDPAssociate, nil)
+	if err != nil {
+		tcpConn.Close()
+		return
+	}
+	boundUDPAddr := addr.UDPAddr()
+	udpConn, err := net.DialUDP("udp", nil, boundUDPAddr)
+	if err != nil {
+		return
+	}
+	uc.conn = udpConn
+
+}
+
+func (uc *UDPConnection) sender() {
+	defer uc.wg.Done()
+	for info := range uc.sendChan {
+		for uc.conn == nil {
+			uc.initConnect()
+		}
+		msg := new(dns.Msg)
+		err := msg.Unpack(info.bytes)
+		if err != nil {
+			info.err = err
+			uc.recvChan <- info
+			continue
+		}
+
+		// 编码目标地址和负载数据
+		packet, err := socks5.EncodeUDPPacket(socks5.ParseAddr(info.remoteAddr), info.bytes)
+		if err != nil {
+			info.err = err
+			uc.recvChan <- info
+			continue
+		}
+		uc.mapMutex.Lock()
+		uc.queryMap[msg.Id] = info
+		uc.mapMutex.Unlock()
+		go func(id uint16) {
+			<-time.After(5 * time.Second)
+			uc.mapMutex.Lock()
+			query, found := uc.queryMap[id]
+			delete(uc.queryMap, id)
+			uc.mapMutex.Unlock()
+			if found {
+				info.err = fmt.Errorf("time out")
+				uc.recvChan <- query
+			}
+
+		}(msg.Id)
+		if _, err := uc.conn.Write(packet); err != nil {
+			info.err = err
+			uc.recvChan <- info
+			continue
+		}
+	}
+}
+
+func (uc *UDPConnection) receiver() {
+	defer uc.wg.Done()
+	buffer := make([]byte, 4096)
+	for {
+		if uc.conn == nil {
+			continue
+		}
+		// uc.conn.SetReadDeadline(time.Now().Add(time.Duration(dnsTimeout) * time.Second))
+		n, _, err := uc.conn.ReadFromUDP(buffer)
+		if err != nil {
+			continue
+		}
+		bytes := buffer[:n]
+		// 解码收到的数据包
+		_, payload, err := socks5.DecodeUDPPacket(bytes)
+		if err != nil {
+			continue
+		}
+		response := new(dns.Msg)
+		if err := response.Unpack(payload); err != nil {
+			continue
+		}
+		uc.mapMutex.Lock()
+		query, found := uc.queryMap[response.Id]
+		uc.mapMutex.Unlock()
+		if found {
+			query.bytes = payload
+			uc.recvChan <- query
+			uc.mapMutex.Lock()
+			delete(uc.queryMap, response.Id)
+			uc.mapMutex.Unlock()
+		}
+	}
+}
+
+func (uc *UDPConnection) Close() {
+	close(uc.sendChan)
+	uc.conn.Close()
+	uc.wg.Wait()
 }

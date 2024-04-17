@@ -70,7 +70,7 @@ func main() {
 	clash.SetMixMaxCount(100, 70, 20)
 	clash.SetBufferSize(1024, 1024*10)
 	clash.DNSCachTime(300)
-	go tunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", "udp,tcp,doh", false, []string{"208.67.222.222", "8.8.8.8"}, []string{})
+	go tunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", "udp,tcp,doh", true, []string{"208.67.222.222", "8.8.8.8"}, []string{})
 	// go tool pprof -http=:8081 http://localhost:6060/debug/pprof/goroutine
 	go http.ListenAndServe(":6060", nil)
 
