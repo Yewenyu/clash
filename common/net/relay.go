@@ -37,11 +37,14 @@ func Relay(leftConn, rightConn net.Conn) {
 		return
 	}
 	// handle(cChan, &handleO)
-	handle := func(w, r net.Conn) {
+	handle := func(w, r net.Conn, readTimeout bool) {
 		b := pool.Get().([]byte)
 		defer pool.Put(b)
 		defer w.Close()
 		for {
+			if readTimeout {
+				r.SetReadDeadline(time.Now().Add(5 * time.Second))
+			}
 			n, err := r.Read(b)
 			if err != nil {
 				break
@@ -52,6 +55,7 @@ func Relay(leftConn, rightConn net.Conn) {
 			}
 		}
 	}
-	go handle(rightConn, leftConn)
-	handle(leftConn, rightConn)
+	go handle(rightConn, leftConn, false)
+	handle(leftConn, rightConn, true)
+	rightConn.SetReadDeadline(time.Now())
 }
