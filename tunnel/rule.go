@@ -411,6 +411,11 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 				response := <-recvChan
 				h, _ := response.handle.(func(bytes []byte, err error))
 				if response.err != nil {
+					msg := new(dns.Msg)
+					err := msg.Unpack(response.bytes)
+					if err != nil {
+						response.err = fmt.Errorf("[DNS UDP]qurrey error %v : %s", msg.Question, response.err)
+					}
 					response.bytes = nil
 				}
 				h(response.bytes, response.err)
