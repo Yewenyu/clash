@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"clash"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -71,6 +73,7 @@ func main() {
 	clash.SetBufferSize(1024, 1024*10)
 	clash.DNSCachTime(300)
 	go tunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", "udp,tcp,doh", true, []string{"208.67.222.222", "8.8.8.8"}, []string{})
+	go lisenConfig()
 	// go tool pprof -http=:8081 http://localhost:6060/debug/pprof/goroutine
 	go http.ListenAndServe(":6060", nil)
 
@@ -82,7 +85,7 @@ func main() {
 		}
 		C.SetConfig(configFile)
 	} else {
-		configFile := filepath.Join(C.Path.HomeDir(), C.Path.Config())
+		configFile = filepath.Join(C.Path.HomeDir(), C.Path.Config())
 		C.SetConfig(configFile)
 	}
 	// clash.CustomLogFile(C.Path.HomeDir()+"/log.log", 5, 0)
@@ -119,4 +122,83 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
+}
+
+func lisenConfig() {
+	// UDP 端口和地址设置
+	udpAddress := "0.0.0.0:9876"
+	controllerURL := "http://localhost:9090"
+	bearerToken := ""
+
+	// 监听 UDP
+	conn, err := net.ListenPacket("udp", udpAddress)
+	if err != nil {
+		fmt.Printf("Failed to listen on UDP port: %v\n", err)
+		return
+	}
+	defer conn.Close()
+	fmt.Println("Listening on", udpAddress)
+
+	// 缓冲区用于读取数据
+	buffer := make([]byte, 10240)
+
+	for {
+		n, addr, err := conn.ReadFrom(buffer)
+		if err != nil {
+			fmt.Printf("Failed to read: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("Received %d bytes from %s\n", n, addr.String())
+
+		// 将接收到的数据写入文件
+		if err := os.WriteFile(configFile, buffer[:n], 0644); err != nil {
+			fmt.Printf("Failed to write to file: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("Config data written to %s\n", configFile)
+
+		// 调用重新加载配置的函数
+		if err := reloadConfig(controllerURL, bearerToken); err != nil {
+			fmt.Printf("Error reloading configuration: %v\n", err)
+		} else {
+			fmt.Println("Configuration reload successful")
+		}
+	}
+}
+
+// reloadConfig 发送 PUT 请求到 Clash 的 /configs 接口来重新加载配置
+func reloadConfig(controllerURL string, bearerToken string) error {
+	// 构建请求 URL
+	url := fmt.Sprintf("%s/configs", controllerURL)
+
+	// 创建请求体，这里使用空的 JSON 对象，因为我们只是触发重新加载
+	requestBody := bytes.NewReader([]byte("{}"))
+
+	// 创建请求
+	req, err := http.NewRequest("PUT", url, requestBody)
+	if err != nil {
+		return fmt.Errorf("creating request failed: %v", err)
+	}
+
+	// 设置认证头
+	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	// 发送请求
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("sending request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查 HTTP 响应状态
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("received non-200 status code: %d", resp.StatusCode)
+	}
+
+	fmt.Println("Configuration reloaded successfully")
+	return nil
 }
