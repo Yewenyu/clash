@@ -244,10 +244,10 @@ func (r *TRule) setDNSCach(bytes []byte, l *sync.Mutex) {
 		return
 	}
 
-	var qName = fileName(msg)
 	l.Lock()
 	defer l.Unlock()
 	if len(msg.Answer) > 0 {
+		var qName = fileName(msg)
 		dnsDir := r.dnsFilePath(qName)
 		oldCach, err := readBytesFromFile(dnsDir)
 		if err == nil {

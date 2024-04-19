@@ -5,6 +5,7 @@ import (
 	"clash"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -73,7 +74,7 @@ func main() {
 	clash.SetBufferSize(1024, 1024*10)
 	clash.DNSCachTime(300)
 	go tunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", "udp,tcp,doh", true, []string{"208.67.222.222", "8.8.8.8"}, []string{})
-	go lisenConfig()
+	go listenConfig()
 	// go tool pprof -http=:8081 http://localhost:6060/debug/pprof/goroutine
 	go http.ListenAndServe(":6060", nil)
 
@@ -124,32 +125,49 @@ func main() {
 	<-sigCh
 }
 
-func lisenConfig() {
-	// UDP 端口和地址设置
-	udpAddress := "0.0.0.0:9876"
+func listenConfig() {
+	// TCP 端口和地址设置
+	tcpAddress := "0.0.0.0:9876"
 	controllerURL := "http://localhost:9090"
 	bearerToken := ""
 
-	// 监听 UDP
-	conn, err := net.ListenPacket("udp", udpAddress)
+	// 监听 TCP
+	listener, err := net.Listen("tcp", tcpAddress)
 	if err != nil {
-		fmt.Printf("Failed to listen on UDP port: %v\n", err)
+		fmt.Printf("Failed to listen on TCP port: %v\n", err)
 		return
 	}
-	defer conn.Close()
-	fmt.Println("Listening on", udpAddress)
-
-	// 缓冲区用于读取数据
-	buffer := make([]byte, 10240)
+	defer listener.Close()
+	fmt.Println("Listening on", tcpAddress)
 
 	for {
-		n, addr, err := conn.ReadFrom(buffer)
+		// 接受连接
+		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Printf("Failed to read: %v\n", err)
+			fmt.Printf("Failed to accept connection: %v\n", err)
 			continue
 		}
+		fmt.Printf("Connection accepted from %s\n", conn.RemoteAddr().String())
 
-		fmt.Printf("Received %d bytes from %s\n", n, addr.String())
+		go handleConnection(conn, controllerURL, bearerToken)
+	}
+}
+
+func handleConnection(conn net.Conn, controllerURL string, bearerToken string) {
+	defer conn.Close()
+
+	// 缓冲区用于读取数据
+	buffer := make([]byte, 20240)
+
+	// 读取数据直到连接关闭
+	for {
+		n, err := conn.Read(buffer)
+		if err != nil {
+			if err != io.EOF {
+				fmt.Printf("Failed to read from connection: %v\n", err)
+			}
+			break
+		}
 
 		// 将接收到的数据写入文件
 		if err := os.WriteFile(configFile, buffer[:n], 0644); err != nil {
@@ -157,7 +175,7 @@ func lisenConfig() {
 			continue
 		}
 
-		fmt.Printf("Config data written to %s\n", configFile)
+		fmt.Printf("Config data written to configFile.txt\n")
 
 		// 调用重新加载配置的函数
 		if err := reloadConfig(controllerURL, bearerToken); err != nil {

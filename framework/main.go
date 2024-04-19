@@ -243,29 +243,23 @@ func ListenUDP(targetAddr, localAddr string) {
 	}
 }
 
-// sendConfig 发送配置数据到指定的UDP端口
-func SendConfig(udpAddress string, configData string) error {
-	// 解析UDP地址
-	addr, err := net.ResolveUDPAddr("udp", udpAddress)
+// SendConfig 使用TCP协议发送配置数据到指定的TCP端口
+func SendConfig(tcpAddress string, configData string) string {
+	// 建立TCP连接
+	conn, err := net.Dial("tcp", tcpAddress)
 	if err != nil {
-		return fmt.Errorf("resolving UDP address failed: %v", err)
-	}
-
-	// 建立UDP连接
-	conn, err := net.DialUDP("udp", nil, addr)
-	if err != nil {
-		return fmt.Errorf("dialing UDP failed: %v", err)
+		return fmt.Sprintf("dialing TCP failed: %v", err)
 	}
 	defer conn.Close()
 
 	// 发送数据
 	_, err = conn.Write([]byte(configData))
 	if err != nil {
-		return fmt.Errorf("sending data failed: %v", err)
+		return fmt.Sprintf("sending data failed: %v", err)
 	}
 
-	fmt.Printf("Config data sent to %s\n", udpAddress)
-	return nil
+	fmt.Printf("Config data sent to %s\n", tcpAddress)
+	return ""
 }
 
 func PProf(address string) {
