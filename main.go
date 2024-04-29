@@ -20,7 +20,6 @@ import (
 	"github.com/Dreamacro/clash/hub"
 	"github.com/Dreamacro/clash/hub/executor"
 	"github.com/Dreamacro/clash/log"
-	"github.com/Dreamacro/clash/tunnel"
 
 	"go.uber.org/automaxprocs/maxprocs"
 )
@@ -58,7 +57,7 @@ func main() {
 		fmt.Printf("Clash %s %s %s with %s %s\n", C.Version, runtime.GOOS, runtime.GOARCH, runtime.Version(), C.BuildTime)
 		return
 	}
-
+	showlanIp()
 	if homeDir != "" {
 		if !filepath.IsAbs(homeDir) {
 			currentDir, _ := os.Getwd()
@@ -73,7 +72,7 @@ func main() {
 	clash.SetMixMaxCount(100, 70, 20)
 	clash.SetBufferSize(1024, 1024*10)
 	clash.DNSCachTime(300)
-	go tunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", "udp,tcp,doh", true, []string{"208.67.222.222", "8.8.8.8"}, []string{})
+	// go tunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", "udp,tcp,doh", true, []string{"208.67.222.222", "8.8.8.8"}, []string{})
 	go listenConfig()
 	// go tool pprof -http=:8081 http://localhost:6060/debug/pprof/goroutine
 	go http.ListenAndServe(":6060", nil)
@@ -219,4 +218,49 @@ func reloadConfig(controllerURL string, bearerToken string) error {
 
 	fmt.Println("Configuration reloaded successfully")
 	return nil
+}
+
+func showlanIp() {
+	// 获取本机的所有网络接口
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	// 遍历每一个接口
+	for _, iface := range interfaces {
+		// 检查网络接口是否活跃并且没有被禁用
+		if iface.Flags&net.FlagUp == 0 {
+			continue // 接口未激活
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue // 忽略环回接口
+		}
+
+		// 获取接口绑定的地址
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		// 遍历地址，找到 IPv4 地址
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			// 确保是 IPv4 地址且不是环回地址
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			ip = ip.To4()
+			if ip != nil {
+				fmt.Printf("Active interface: %v, IP: %v\n", iface.Name, ip)
+			}
+		}
+	}
 }
