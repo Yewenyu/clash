@@ -1,5 +1,7 @@
 github.com/Dreamacro/protobytes v0.0.0-20230617041236-6500a9f4f158 h1:JFnwKplz9hj8ubqYjm8HkgZS1Rvz9yW+u/XCNNTxr0k=
 github.com/Dreamacro/protobytes v0.0.0-20230617041236-6500a9f4f158/go.mod h1:QvmEZ/h6KXszPOr2wUFl7Zn3hfFNYdfbXwPVDTyZs6k=
+github.com/Yewenyu/GoLimiter v0.0.1 h1:WygxRZwwldapgPohtgJI7c/6xPMPAi7fFpgute3ppXM=
+github.com/Yewenyu/GoLimiter v0.0.1/go.mod h1:fKZDAqzCU1//Z8k1cBmfEqRasbEDsyzHHRwvXtH3gPM=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

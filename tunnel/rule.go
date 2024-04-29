@@ -14,11 +14,11 @@ import (
 	"sync"
 	"time"
 
-	connmanager "github.com/Dreamacro/clash/common/connManager"
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/log"
 	R "github.com/Dreamacro/clash/rule"
 	"github.com/Dreamacro/clash/transport/socks5"
+	gl "github.com/Yewenyu/GoLimiter"
 	"github.com/miekg/dns"
 	"golang.org/x/net/proxy"
 )
@@ -438,7 +438,7 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 	dnsCount += len(dohHost)
 	initTime := time.Now().Unix()
 	dnsCanHandle := true
-	var golimiter = connmanager.CreateGoroutineLimiter(MaxDnsConnectCount, func(v DNSV) {
+	var golimiter = gl.NewGoroutinePool(MaxDnsConnectCount, func(v DNSV) {
 
 		var l sync.Mutex
 		rCount := 0
@@ -561,7 +561,7 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 		}
 		log.Debugln("[DNS Start] %v", msg.Question)
 		dnsBytes, _ := msg.Pack()
-		golimiter.HandleValue(DNSV{oAddr: origAddr, conn: conn, bytes: dnsBytes})
+		golimiter.SubmitTask(DNSV{oAddr: origAddr, conn: conn, bytes: dnsBytes})
 	}
 }
 

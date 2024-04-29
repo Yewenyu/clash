@@ -20,6 +20,7 @@ import (
 	"github.com/Dreamacro/clash/log"
 	"github.com/Dreamacro/clash/tunnel/statistic"
 
+	gl "github.com/Yewenyu/GoLimiter"
 	"go.uber.org/atomic"
 )
 
@@ -121,7 +122,7 @@ func process() {
 
 	queue := tcpQueue
 	for conn := range queue {
-		goLimiter.SetMaxCount(connmanager.TCPMaxCount)
+		goLimiter.SetCapacity(connmanager.TCPMaxCount)
 		handleTCPConn(conn)
 	}
 }
@@ -311,13 +312,13 @@ func handleUDPConn(packet *inbound.PacketAdapter) {
 	}()
 }
 
-var goLimiter = connmanager.CreateGoroutineLimiter(connmanager.TCPMaxCount, func(ctx C.ConnContext) {
+var goLimiter = gl.NewGoroutinePool(connmanager.TCPMaxCount, func(ctx C.ConnContext) {
 
 	handleTCPConn1(ctx)
 })
 
 func handleTCPConn(connCtx C.ConnContext) {
-	goLimiter.HandleValue(connCtx)
+	goLimiter.SubmitTask(connCtx)
 }
 
 func handleTCPConn1(connCtx C.ConnContext) {

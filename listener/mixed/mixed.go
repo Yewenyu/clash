@@ -11,6 +11,7 @@ import (
 	"github.com/Dreamacro/clash/listener/socks"
 	"github.com/Dreamacro/clash/transport/socks4"
 	"github.com/Dreamacro/clash/transport/socks5"
+	gl "github.com/Yewenyu/GoLimiter"
 )
 
 type Listener struct {
@@ -47,7 +48,7 @@ func New(addr string, in chan<- C.ConnContext) (C.Listener, error) {
 		addr:     addr,
 		cache:    cache.New(cache.WithAge(30)),
 	}
-	goLimiter = connmanager.CreateGoroutineLimiter(connmanager.MixedMaxCount, func(mht mixHandleType) {
+	goLimiter = gl.NewGoroutinePool(connmanager.MixedMaxCount, func(mht mixHandleType) {
 
 		handleConn1(mht.conn, mht.in, mht.cache)
 	})
@@ -73,10 +74,10 @@ type mixHandleType struct {
 	cache *cache.LruCache
 }
 
-var goLimiter *connmanager.GoroutineLimiter[mixHandleType]
+var goLimiter *gl.GoroutinePool[mixHandleType]
 
 func handleConn(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
-	goLimiter.HandleValue(mixHandleType{conn: conn, in: in, cache: cache})
+	goLimiter.SubmitTask(mixHandleType{conn: conn, in: in, cache: cache})
 }
 func handleConn1(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
 	conn.(*net.TCPConn).SetKeepAlive(true)

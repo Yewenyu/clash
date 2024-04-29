@@ -1,11 +1,12 @@
 module clash
 
-go 1.21.0
+go 1.21.4
 
 require github.com/Dreamacro/clash v1.17.0
 
 require (
 	github.com/Dreamacro/protobytes v0.0.0-20230617041236-6500a9f4f158 // indirect
+	github.com/Yewenyu/GoLimiter v0.0.1 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/gofrs/uuid/v5 v5.0.0 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
