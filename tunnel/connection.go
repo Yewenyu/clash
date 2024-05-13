@@ -22,7 +22,7 @@ func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, metadata *C.Metadata
 		return err
 	}
 	// reset timeout
-	pc.SetReadDeadline(time.Now().Add(5 * time.Second))
+	pc.SetReadDeadline(time.Now().Add(time.Duration(N.UdpTimeOut) * time.Second))
 
 	return nil
 }
@@ -34,7 +34,7 @@ func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, 
 	defer pc.Close()
 
 	for {
-		pc.SetReadDeadline(time.Now().Add(5 * time.Second))
+		pc.SetReadDeadline(time.Now().Add(time.Duration(N.UdpTimeOut) * time.Second))
 		n, from, err := pc.ReadFrom(buf)
 		if err != nil {
 			return

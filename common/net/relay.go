@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+var (
+	TcpTimeout = 5
+	UdpTimeOut = 5
+)
+
 // Relay copies between left and right bidirectionally.
 func Relay1(leftConn, rightConn net.Conn) {
 	ch := make(chan error)
@@ -43,7 +48,7 @@ func Relay(leftConn, rightConn net.Conn) {
 		defer w.Close()
 		for {
 			if readTimeout {
-				r.SetReadDeadline(time.Now().Add(5 * time.Second))
+				r.SetReadDeadline(time.Now().Add(time.Duration(TcpTimeout) * time.Second))
 			}
 			n, err := r.Read(b)
 			if err != nil {

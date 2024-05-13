@@ -151,6 +151,10 @@ func SetMixMaxCount(mix, tcp, udp int) {
 func DNSCachTime(second int) {
 	t.DnsCachTime = second
 }
+func SetConnTimeout(tcp, udp int) {
+	N.TcpTimeout = tcp
+	N.UdpTimeOut = udp
+}
 
 type InfoCallBack interface {
 	HealthTest(result string)
