@@ -1,10 +1,10 @@
 package outbound
 
 type (
-	Vless       = Vmess
-	VlessOption = VmessOption
+	VlessV0       = Vmess
+	VlessOptionV0 = VmessOption
 )
 
-func NewVless(option VlessOption) (*Vless, error) {
+func NewVlessV0(option VlessOptionV0) (*VlessV0, error) {
 	return newVmess(option, true)
 }

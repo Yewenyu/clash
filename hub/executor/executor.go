@@ -2,8 +2,12 @@ package executor
 
 import (
 	"fmt"
+	"github.com/Dreamacro/clash/addons/metacubex/ntp"
+	"net"
 	"os"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/Dreamacro/clash/adapter"
 	"github.com/Dreamacro/clash/adapter/outboundgroup"
@@ -69,6 +73,7 @@ func ApplyConfig(cfg *config.Config, force bool) {
 
 	updateUsers(cfg.Users)
 	updateProxies(cfg.Proxies, cfg.Providers)
+	updateNTP(cfg.NTP)
 	updateRules(cfg.Rules)
 	updateHosts(cfg.Hosts)
 	updateProfile(cfg)
@@ -147,6 +152,17 @@ func updateDNS(c *config.DNS) {
 	resolver.DefaultHostMapper = m
 
 	dns.ReCreateServer(c.Listen, r, m)
+}
+
+func updateNTP(c *config.NTP) {
+	if c != nil && c.Enable {
+		ntp.ReCreateNTPService(
+			net.JoinHostPort(c.Server, strconv.Itoa(c.Port)),
+			time.Duration(c.Interval),
+			c.DialerProxy,
+			c.WriteToSystem,
+		)
+	}
 }
 
 func updateHosts(tree *trie.DomainTrie) {

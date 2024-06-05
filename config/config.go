@@ -55,6 +55,16 @@ type LegacyInbound struct {
 	BindAddress string `json:"bind-address"`
 }
 
+// NTP config
+type NTP struct {
+	Enable        bool   `yaml:"enable"`
+	Server        string `yaml:"server"`
+	Port          int    `yaml:"port"`
+	Interval      int    `yaml:"interval"`
+	DialerProxy   string `yaml:"dialer-proxy"`
+	WriteToSystem bool   `yaml:"write-to-system"`
+}
+
 // DNS config
 type DNS struct {
 	Enable            bool             `yaml:"enable"`
@@ -94,6 +104,7 @@ type Experimental struct {
 type Config struct {
 	General      *General
 	DNS          *DNS
+	NTP          *NTP
 	Experimental *Experimental
 	Hosts        *trie.DomainTrie
 	Profile      *Profile
