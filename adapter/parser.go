@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"fmt"
-
 	"github.com/Dreamacro/clash/adapter/outbound"
 	"github.com/Dreamacro/clash/common/structure"
 	C "github.com/Dreamacro/clash/constant"
@@ -61,8 +60,15 @@ func ParseProxy(mapping map[string]any) (C.Proxy, error) {
 		if err != nil {
 			break
 		}
+		//TODO
+		//vlessOption := &outbound.VlessOption{ClientFingerprint: tlsC.GetGlobalFingerprint()}
+		//err = decoder.Decode(mapping, vlessOption)
+		//if err != nil {
+		//	break
+		//}
+		//proxy, err = outbound.NewVless(*vlessOption)
 		if proxyType == "vless" {
-			proxy, err = outbound.NewVless(*vmessOption)
+			proxy, err = outbound.NewVlessV0(*vmessOption)
 		} else {
 			proxy, err = outbound.NewVmess(*vmessOption)
 		}

@@ -3,6 +3,8 @@ package dialer
 import (
 	"context"
 	"errors"
+	D2 "github.com/Dreamacro/clash/addons/metacubex/component/dialer"
+	"github.com/Dreamacro/clash/constant/pref"
 	"net"
 
 	"github.com/Dreamacro/clash/component/resolver"
@@ -104,7 +106,12 @@ func dialContext(ctx context.Context, network string, destination net.IP, port s
 	if opt.routingMark != 0 {
 		bindMarkToDialer(opt.routingMark, dialer, network, destination)
 	}
-
+	if opt.mpTcp {
+		D2.SetMultiPathTCP(dialer)
+	}
+	if opt.tfo && !D2.DisableTFO {
+		return D2.DialTFO(ctx, *dialer, network, net.JoinHostPort(destination.String(), port), pref.DefaultTCPTimeout)
+	}
 	return dialer.DialContext(ctx, network, net.JoinHostPort(destination.String(), port))
 }
 

@@ -13,6 +13,9 @@ type option struct {
 	fallbackBind  bool
 	addrReuse     bool
 	routingMark   int
+	prefer        int
+	tfo           bool
+	mpTcp         bool
 }
 
 type Option func(opt *option)
@@ -38,5 +41,17 @@ func WithAddrReuse(reuse bool) Option {
 func WithRoutingMark(mark int) Option {
 	return func(opt *option) {
 		opt.routingMark = mark
+	}
+}
+
+func WithTFO(tfo bool) Option {
+	return func(opt *option) {
+		opt.tfo = tfo
+	}
+}
+
+func WithMPTCP(mpTcp bool) Option {
+	return func(opt *option) {
+		opt.mpTcp = mpTcp
 	}
 }

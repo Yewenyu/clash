@@ -3,6 +3,7 @@ package constant
 import (
 	"context"
 	"fmt"
+	"github.com/Dreamacro/clash/constant/pref"
 	"net"
 	"time"
 
@@ -31,9 +32,9 @@ const (
 )
 
 const (
-	DefaultTCPTimeout = 5 * time.Second
-	DefaultUDPTimeout = DefaultTCPTimeout
-	DefaultTLSTimeout = DefaultTCPTimeout
+	DefaultTCPTimeout = pref.DefaultTCPTimeout
+	DefaultUDPTimeout = pref.DefaultUDPTimeout
+	DefaultTLSTimeout = pref.DefaultTLSTimeout
 )
 
 type Connection interface {
