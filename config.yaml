@@ -35,12 +35,20 @@ dns:
     # - '8.8.8.8#en0'
 
 proxies:
-- name: 'ss00'
-  type: ss
-  server: 45.79.227.196
-  port: 37231
-  cipher: aes-256-gcm
-  password: zWlr2nxzM2U2qlZF
+- name: "ss00"
+  type: vless
+  server: 127.0.0.1
+  port: 443
+  uuid: 795bdc6f-0b25-4dc4-b5eb-6615dbcd187e
+  network: tcp
+  tls: true
+  udp: true
+  flow: xtls-rprx-vision
+  servername: www.amazon.com # REALITY servername
+  reality-opts:
+    public-key: ys9Xv94VKCv5fRIqrY_fK4TVL0TaNS9PpTeggLGigCI
+    short-id: 906f47df46efecc5 # optional
+  client-fingerprint: chrome # cannot be empty
 
 proxy-groups:
 - name: Proxy1
@@ -51,8 +59,8 @@ proxy-groups:
   interval: 5
 
 rules:
-  - DOMAIN-KEYWORD,tikvpn.com,DIRECT
-  - DOMAIN-KEYWORD,tikvpn.in,Proxy1
-  - DOMAIN-KEYWORD,ipinfo.io,DIRECT
-  - DOMAIN-KEYWORD,ipip.net,DIRECT
+  # - DOMAIN-KEYWORD,tikvpn.com,DIRECT
+  # - DOMAIN-KEYWORD,tikvpn.in,Proxy1
+  # - DOMAIN-KEYWORD,ipinfo.io,DIRECT
+  # - DOMAIN-KEYWORD,ipip.net,DIRECT
   - MATCH,Proxy1

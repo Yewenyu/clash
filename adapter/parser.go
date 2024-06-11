@@ -2,7 +2,10 @@ package adapter
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/Dreamacro/clash/adapter/outbound"
+	tlsC "github.com/Dreamacro/clash/addons/metacubex/component/tls"
 	"github.com/Dreamacro/clash/common/structure"
 	C "github.com/Dreamacro/clash/constant"
 )
@@ -47,31 +50,6 @@ func ParseProxy(mapping map[string]any) (C.Proxy, error) {
 			break
 		}
 		proxy = outbound.NewHttp(*httpOption)
-	case "vless":
-		fallthrough
-	case "vmess":
-		vmessOption := &outbound.VmessOption{
-			HTTPOpts: outbound.HTTPOptions{
-				Method: "GET",
-				Path:   []string{"/"},
-			},
-		}
-		err = decoder.Decode(mapping, vmessOption)
-		if err != nil {
-			break
-		}
-		//TODO
-		//vlessOption := &outbound.VlessOption{ClientFingerprint: tlsC.GetGlobalFingerprint()}
-		//err = decoder.Decode(mapping, vlessOption)
-		//if err != nil {
-		//	break
-		//}
-		//proxy, err = outbound.NewVless(*vlessOption)
-		if proxyType == "vless" {
-			proxy, err = outbound.NewVlessV0(*vmessOption)
-		} else {
-			proxy, err = outbound.NewVmess(*vmessOption)
-		}
 	case "snell":
 		snellOption := &outbound.SnellOption{}
 		err = decoder.Decode(mapping, snellOption)
@@ -79,13 +57,57 @@ func ParseProxy(mapping map[string]any) (C.Proxy, error) {
 			break
 		}
 		proxy, err = outbound.NewSnell(*snellOption)
-	case "trojan":
-		trojanOption := &outbound.TrojanOption{}
-		err = decoder.Decode(mapping, trojanOption)
+	case "vmess":
+		if isCubexAdapter(mapping) {
+			vmessOption := &outbound.VmessOptionMC{
+				HTTPOpts: outbound.HTTPOptions{
+					Method: "GET",
+					Path:   []string{"/"},
+				},
+				ClientFingerprint: tlsC.GetGlobalFingerprint(),
+			}
+
+			err = decoder.Decode(mapping, vmessOption)
+			if err != nil {
+				break
+			}
+			proxy, err = outbound.NewVmessMC(*vmessOption)
+		} else {
+			vmessOption := &outbound.VmessOption{
+				HTTPOpts: outbound.HTTPOptions{
+					Method: "GET",
+					Path:   []string{"/"},
+				},
+			}
+			err = decoder.Decode(mapping, vmessOption)
+			if err != nil {
+				break
+			}
+			proxy, err = outbound.NewVmess(*vmessOption)
+		}
+	case "vless":
+		vlessOption := &outbound.VlessOption{ClientFingerprint: tlsC.GetGlobalFingerprint()}
+		err = decoder.Decode(mapping, vlessOption)
 		if err != nil {
 			break
 		}
-		proxy, err = outbound.NewTrojan(*trojanOption)
+		proxy, err = outbound.NewVless(*vlessOption)
+	case "trojan":
+		if isCubexAdapter(mapping) {
+			trojanOptionMc := &outbound.TrojanOptionMC{ClientFingerprint: tlsC.GetGlobalFingerprint()}
+			err = decoder.Decode(mapping, trojanOptionMc)
+			if err != nil {
+				break
+			}
+			proxy, err = outbound.NewTrojanMC(*trojanOptionMc)
+		} else {
+			trojanOption := &outbound.TrojanOption{}
+			err = decoder.Decode(mapping, trojanOption)
+			if err != nil {
+				break
+			}
+			proxy, err = outbound.NewTrojan(*trojanOption)
+		}
 	default:
 		return nil, fmt.Errorf("unsupport proxy type: %s", proxyType)
 	}
@@ -95,4 +117,12 @@ func ParseProxy(mapping map[string]any) (C.Proxy, error) {
 	}
 
 	return NewProxy(proxy), nil
+}
+
+func isCubexAdapter(mapping map[string]any) bool {
+	adapterType, adapterTypeExist := mapping["cubex-features"].(string)
+	if adapterTypeExist && strings.Compare(adapterType, "true") == 0 {
+		return true
+	}
+	return false
 }

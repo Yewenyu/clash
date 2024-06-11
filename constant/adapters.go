@@ -92,6 +92,7 @@ type ProxyAdapter interface {
 	// It returns a C.Conn with protocol which start with
 	// a new session (if any)
 	StreamConn(c net.Conn, metadata *Metadata) (net.Conn, error)
+	StreamConnContext(ctx context.Context, c net.Conn, metadata *Metadata) (net.Conn, error)
 
 	// DialContext return a C.Conn with protocol which
 	// contains multiplexing-related reuse logic (if any)

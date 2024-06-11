@@ -50,7 +50,7 @@ func (r *Relay) DialContext(ctx context.Context, metadata *C.Metadata, opts ...d
 			return nil, err
 		}
 
-		c, err = first.StreamConn(c, currentMeta)
+		c, err = first.StreamConnContext(ctx, c, currentMeta)
 		if err != nil {
 			return nil, fmt.Errorf("%s connect error: %w", first.Addr(), err)
 		}
@@ -58,7 +58,7 @@ func (r *Relay) DialContext(ctx context.Context, metadata *C.Metadata, opts ...d
 		first = proxy
 	}
 
-	c, err = last.StreamConn(c, metadata)
+	c, err = last.StreamConnContext(ctx, c, metadata)
 	if err != nil {
 		return nil, fmt.Errorf("%s connect error: %w", last.Addr(), err)
 	}
