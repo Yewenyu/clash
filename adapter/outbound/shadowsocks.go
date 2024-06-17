@@ -85,7 +85,7 @@ func (ss *ShadowSocks) DialContext(ctx context.Context, metadata *C.Metadata, op
 		safeConnClose(c, err)
 	}(c)
 
-	c, err = ss.StreamConn(c, metadata)
+	c, err = ss.StreamConnContext(ctx, c, metadata)
 	return NewConn(c, ss), err
 }
 
