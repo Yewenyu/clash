@@ -16,6 +16,9 @@ type Base struct {
 	iface string
 	tp    C.AdapterType
 	udp   bool
+	xudp  bool
+	tfo   bool
+	mpTcp bool
 	rmark int
 }
 
@@ -32,6 +35,11 @@ func (b *Base) Type() C.AdapterType {
 // StreamConn implements C.ProxyAdapter
 func (b *Base) StreamConn(c net.Conn, metadata *C.Metadata) (net.Conn, error) {
 	return c, errors.New("no support")
+}
+
+// StreamConnContext implements C.ProxyAdapter
+func (b *Base) StreamConnContext(ctx context.Context, c net.Conn, metadata *C.Metadata) (net.Conn, error) {
+	return b.StreamConn(c, metadata)
 }
 
 // ListenPacketContext implements C.ProxyAdapter
@@ -71,10 +79,20 @@ func (b *Base) DialOptions(opts ...dialer.Option) []dialer.Option {
 		opts = append(opts, dialer.WithRoutingMark(b.rmark))
 	}
 
+	if b.tfo {
+		opts = append(opts, dialer.WithTFO(true))
+	}
+
+	if b.mpTcp {
+		opts = append(opts, dialer.WithMPTCP(true))
+	}
+
 	return opts
 }
 
 type BasicOption struct {
+	TFO         bool   `proxy:"tfo,omitempty" group:"tfo,omitempty"`
+	MPTCP       bool   `proxy:"mptcp,omitempty" group:"mptcp,omitempty"`
 	Interface   string `proxy:"interface-name,omitempty" group:"interface-name,omitempty"`
 	RoutingMark int    `proxy:"routing-mark,omitempty" group:"routing-mark,omitempty"`
 }
@@ -84,6 +102,9 @@ type BaseOption struct {
 	Addr        string
 	Type        C.AdapterType
 	UDP         bool
+	XUDP        bool
+	TFO         bool
+	MPTCP       bool
 	Interface   string
 	RoutingMark int
 }
@@ -94,6 +115,9 @@ func NewBase(opt BaseOption) *Base {
 		addr:  opt.Addr,
 		tp:    opt.Type,
 		udp:   opt.UDP,
+		xudp:  opt.XUDP,
+		tfo:   opt.TFO,
+		mpTcp: opt.MPTCP,
 		iface: opt.Interface,
 		rmark: opt.RoutingMark,
 	}

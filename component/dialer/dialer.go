@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net"
 
+	"github.com/Dreamacro/clash/constant/pref"
+
 	"github.com/Dreamacro/clash/component/resolver"
 )
 
@@ -104,7 +106,12 @@ func dialContext(ctx context.Context, network string, destination net.IP, port s
 	if opt.routingMark != 0 {
 		bindMarkToDialer(opt.routingMark, dialer, network, destination)
 	}
-
+	if opt.mpTcp {
+		SetMultiPathTCP(dialer)
+	}
+	if opt.tfo && !DisableTFO {
+		return DialTFO(ctx, *dialer, network, net.JoinHostPort(destination.String(), port), pref.DefaultTCPTimeout)
+	}
 	return dialer.DialContext(ctx, network, net.JoinHostPort(destination.String(), port))
 }
 

@@ -2,11 +2,12 @@ package vmess
 
 import (
 	"fmt"
-	"math/rand"
 	"net"
 	"runtime"
 
+	"github.com/Dreamacro/clash/common/utils"
 	"github.com/gofrs/uuid/v5"
+	"github.com/zhangyunhao116/fastrand"
 )
 
 // Version of vmess
@@ -26,8 +27,14 @@ const (
 	SecurityAES128GCM        Security = 3
 	SecurityCHACHA20POLY1305 Security = 4
 	SecurityNone             Security = 5
-	SecurityZero             Security = 6
 )
+
+// CipherMapping return
+var CipherMapping = map[string]byte{
+	"none":              SecurityNone,
+	"aes-128-gcm":       SecurityAES128GCM,
+	"chacha20-poly1305": SecurityCHACHA20POLY1305,
+}
 
 // Command types
 const (
@@ -56,7 +63,6 @@ type Client struct {
 	uuid     *uuid.UUID
 	security Security
 	isAead   bool
-	isVless  bool
 }
 
 // Config of vmess
@@ -67,25 +73,19 @@ type Config struct {
 	Port     string
 	HostName string
 	IsAead   bool
-	IsVless  bool
 }
 
 // StreamConn return a Conn with net.Conn and DstAddr
 func (c *Client) StreamConn(conn net.Conn, dst *DstAddr) (net.Conn, error) {
-	r := rand.Intn(len(c.user))
-	return newConn(conn, c.user[r], dst, c.security, c.isAead, c.isVless)
+	r := fastrand.Intn(len(c.user))
+	return newConn(conn, c.user[r], dst, c.security, c.isAead)
 }
 
 // NewClient return Client instance
 func NewClient(config Config) (*Client, error) {
-	uid, err := uuid.FromString(config.UUID)
+	uid, err := utils.UUIDMap(config.UUID)
 	if err != nil {
 		return nil, err
-	}
-
-	if config.IsVless {
-		config.AlterID = 0
-		config.Security = "zero"
 	}
 
 	var security Security
@@ -96,8 +96,6 @@ func NewClient(config Config) (*Client, error) {
 		security = SecurityCHACHA20POLY1305
 	case "none":
 		security = SecurityNone
-	case "zero":
-		security = SecurityZero
 	case "auto":
 		security = SecurityCHACHA20POLY1305
 		if runtime.GOARCH == "amd64" || runtime.GOARCH == "s390x" || runtime.GOARCH == "arm64" {
@@ -112,6 +110,5 @@ func NewClient(config Config) (*Client, error) {
 		uuid:     &uid,
 		security: security,
 		isAead:   config.IsAead,
-		isVless:  config.IsVless,
 	}, nil
 }

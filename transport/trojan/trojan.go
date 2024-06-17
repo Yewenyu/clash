@@ -12,11 +12,13 @@ import (
 	"net/http"
 	"sync"
 
-	C "github.com/Dreamacro/clash/constant"
+	N "github.com/Dreamacro/clash/common/net"
+	"github.com/Dreamacro/clash/component/ca"
+	tlsC "github.com/Dreamacro/clash/component/tls"
 	"github.com/Dreamacro/clash/transport/socks5"
-	"github.com/Dreamacro/clash/transport/vmess"
-
-	"github.com/Dreamacro/protobytes"
+	vmessMC "github.com/Dreamacro/clash/transport/vmess"
+	"github.com/Dreamacro/clash/common/pool"
+	C "github.com/Dreamacro/clash/constant"
 )
 
 const (
@@ -33,23 +35,32 @@ var (
 
 type Command = byte
 
-var (
+const (
 	CommandTCP byte = 1
 	CommandUDP byte = 3
+
+	// deprecated XTLS commands, as souvenirs
+	commandXRD byte = 0xf0 // XTLS direct mode
+	commandXRO byte = 0xf1 // XTLS origin mode
 )
 
 type Option struct {
-	Password       string
-	ALPN           []string
-	ServerName     string
-	SkipCertVerify bool
+	Password          string
+	ALPN              []string
+	ServerName        string
+	SkipCertVerify    bool
+	Fingerprint       string
+	ClientFingerprint string
+	Reality           *tlsC.RealityConfig
 }
 
 type WebsocketOption struct {
-	Host    string
-	Port    string
-	Path    string
-	Headers http.Header
+	Host                     string
+	Port                     string
+	Path                     string
+	Headers                  http.Header
+	V2rayHttpUpgrade         bool
+	V2rayHttpUpgradeFastOpen bool
 }
 
 type Trojan struct {
@@ -57,12 +68,11 @@ type Trojan struct {
 	hexPassword []byte
 }
 
-func (t *Trojan) StreamConn(conn net.Conn) (net.Conn, error) {
+func (t *Trojan) StreamConn(ctx context.Context, conn net.Conn) (net.Conn, error) {
 	alpn := defaultALPN
 	if len(t.option.ALPN) != 0 {
 		alpn = t.option.ALPN
 	}
-
 	tlsConfig := &tls.Config{
 		NextProtos:         alpn,
 		MinVersion:         tls.VersionTLS12,
@@ -70,19 +80,43 @@ func (t *Trojan) StreamConn(conn net.Conn) (net.Conn, error) {
 		ServerName:         t.option.ServerName,
 	}
 
+	var err error
+	tlsConfig, err = ca.GetSpecifiedFingerprintTLSConfig(tlsConfig, t.option.Fingerprint)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(t.option.ClientFingerprint) != 0 {
+		if t.option.Reality == nil {
+			utlsConn, valid := vmessMC.GetUTLSConn(conn, t.option.ClientFingerprint, tlsConfig)
+			if valid {
+				ctx, cancel := context.WithTimeout(context.Background(), C.DefaultTLSTimeout)
+				defer cancel()
+
+				err := utlsConn.(*tlsC.UConn).HandshakeContext(ctx)
+				return utlsConn, err
+			}
+		} else {
+			ctx, cancel := context.WithTimeout(context.Background(), C.DefaultTLSTimeout)
+			defer cancel()
+			return tlsC.GetRealityConn(ctx, conn, t.option.ClientFingerprint, tlsConfig, t.option.Reality)
+		}
+	}
+	if t.option.Reality != nil {
+		return nil, errors.New("REALITY is based on uTLS, please set a client-fingerprint")
+	}
+
 	tlsConn := tls.Client(conn, tlsConfig)
 
 	// fix tls handshake not timeout
 	ctx, cancel := context.WithTimeout(context.Background(), C.DefaultTLSTimeout)
 	defer cancel()
-	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		return nil, err
-	}
 
-	return tlsConn, nil
+	err = tlsConn.HandshakeContext(ctx)
+	return tlsConn, err
 }
 
-func (t *Trojan) StreamWebsocketConn(conn net.Conn, wsOptions *WebsocketOption) (net.Conn, error) {
+func (t *Trojan) StreamWebsocketConn(ctx context.Context, conn net.Conn, wsOptions *WebsocketOption) (net.Conn, error) {
 	alpn := defaultWebsocketALPN
 	if len(t.option.ALPN) != 0 {
 		alpn = t.option.ALPN
@@ -95,24 +129,35 @@ func (t *Trojan) StreamWebsocketConn(conn net.Conn, wsOptions *WebsocketOption) 
 		ServerName:         t.option.ServerName,
 	}
 
-	return vmess.StreamWebsocketConn(conn, &vmess.WebsocketConfig{
-		Host:      wsOptions.Host,
-		Port:      wsOptions.Port,
-		Path:      wsOptions.Path,
-		Headers:   wsOptions.Headers,
-		TLS:       true,
-		TLSConfig: tlsConfig,
+	var err error
+	tlsConfig, err = ca.GetSpecifiedFingerprintTLSConfig(tlsConfig, t.option.Fingerprint)
+	if err != nil {
+		return nil, err
+	}
+
+	return vmessMC.StreamWebsocketConn(ctx, conn, &vmessMC.WebsocketConfig{
+		Host:                     wsOptions.Host,
+		Port:                     wsOptions.Port,
+		Path:                     wsOptions.Path,
+		Headers:                  wsOptions.Headers,
+		V2rayHttpUpgrade:         wsOptions.V2rayHttpUpgrade,
+		V2rayHttpUpgradeFastOpen: wsOptions.V2rayHttpUpgradeFastOpen,
+		TLS:                      true,
+		TLSConfig:                tlsConfig,
+		ClientFingerprint:        t.option.ClientFingerprint,
 	})
 }
 
 func (t *Trojan) WriteHeader(w io.Writer, command Command, socks5Addr []byte) error {
-	buf := protobytes.BytesWriter{}
-	buf.PutSlice(t.hexPassword)
-	buf.PutSlice(crlf)
+	buf := pool.GetBuffer()
+	defer pool.PutBuffer(buf)
 
-	buf.PutUint8(command)
-	buf.PutSlice(socks5Addr)
-	buf.PutSlice(crlf)
+	buf.Write(t.hexPassword)
+	buf.Write(crlf)
+
+	buf.WriteByte(command)
+	buf.Write(socks5Addr)
+	buf.Write(crlf)
 
 	_, err := w.Write(buf.Bytes())
 	return err
@@ -125,11 +170,14 @@ func (t *Trojan) PacketConn(conn net.Conn) net.PacketConn {
 }
 
 func writePacket(w io.Writer, socks5Addr, payload []byte) (int, error) {
-	buf := protobytes.BytesWriter{}
-	buf.PutSlice(socks5Addr)
-	buf.PutUint16be(uint16(len(payload)))
-	buf.PutSlice(crlf)
-	buf.PutSlice(payload)
+	buf := pool.GetBuffer()
+	defer pool.PutBuffer(buf)
+
+	buf.Write(socks5Addr)
+	binary.Write(buf, binary.BigEndian, uint16(len(payload)))
+	buf.Write(crlf)
+	buf.Write(payload)
+
 	return w.Write(buf.Bytes())
 }
 
@@ -200,6 +248,8 @@ func New(option *Option) *Trojan {
 	return &Trojan{option, hexSha224([]byte(option.Password))}
 }
 
+var _ N.EnhancePacketConn = (*PacketConn)(nil)
+
 type PacketConn struct {
 	net.Conn
 	remain int
@@ -247,10 +297,52 @@ func (pc *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return n, addr, nil
 }
 
+func (pc *PacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+	pc.mux.Lock()
+	defer pc.mux.Unlock()
+
+	destination, err := socks5.ReadAddr0(pc.Conn)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	addr = destination.UDPAddr()
+
+	data = pool.Get(pool.UDPBufferSize)
+	put = func() {
+		_ = pool.Put(data)
+	}
+
+	_, err = io.ReadFull(pc.Conn, data[:2+2]) // u16be length + CR LF
+	if err != nil {
+		if put != nil {
+			put()
+		}
+		return nil, nil, nil, err
+	}
+	length := binary.BigEndian.Uint16(data)
+
+	if length > 0 {
+		data = data[:length]
+		_, err = io.ReadFull(pc.Conn, data)
+		if err != nil {
+			if put != nil {
+				put()
+			}
+			return nil, nil, nil, err
+		}
+	} else {
+		if put != nil {
+			put()
+		}
+		return nil, nil, addr, nil
+	}
+
+	return
+}
+
 func hexSha224(data []byte) []byte {
 	buf := make([]byte, 56)
-	hash := sha256.New224()
-	hash.Write(data)
-	hex.Encode(buf, hash.Sum(nil))
+	hash := sha256.Sum224(data)
+	hex.Encode(buf, hash[:])
 	return buf
 }

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Dreamacro/clash/common/util"
+	"github.com/Dreamacro/clash/common/utils"
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/transport/socks5"
 )
@@ -35,7 +35,7 @@ func parseSocksAddr(target socks5.Addr) *C.Metadata {
 
 func parseHTTPAddr(request *http.Request) *C.Metadata {
 	host := request.URL.Hostname()
-	port, _ := strconv.ParseUint(util.EmptyOr(request.URL.Port(), "80"), 10, 16)
+	port, _ := strconv.ParseUint(utils.EmptyOr(request.URL.Port(), "80"), 10, 16)
 
 	// trim FQDN (#737)
 	host = strings.TrimRight(host, ".")

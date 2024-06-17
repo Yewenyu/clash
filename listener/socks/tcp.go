@@ -89,7 +89,7 @@ func HandleSocks4(conn net.Conn, in chan<- C.ConnContext) {
 }
 
 func HandleSocks5(conn net.Conn, in chan<- C.ConnContext) {
-	target, command, err := socks5.ServerHandshake(conn, authStore.Authenticator())
+	target, command, _, err := socks5.ServerHandshake(conn, authStore.Authenticator())
 	if err != nil {
 		conn.Close()
 		return

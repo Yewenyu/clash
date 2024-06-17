@@ -3,13 +3,14 @@ package vmess
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
 	"net/textproto"
 
-	"github.com/Dreamacro/clash/common/util"
+	"github.com/Dreamacro/clash/common/utils"
+	"github.com/zhangyunhao116/fastrand"
 )
 
 type httpConn struct {
@@ -53,16 +54,23 @@ func (hc *httpConn) Write(b []byte) (int, error) {
 		return hc.Conn.Write(b)
 	}
 
-	path := hc.cfg.Path[rand.Intn(len(hc.cfg.Path))]
-	host := hc.cfg.Host
-	if header := hc.cfg.Headers["Host"]; len(header) != 0 {
-		host = header[rand.Intn(len(header))]
+	if len(hc.cfg.Path) == 0 {
+		return -1, errors.New("path is empty")
 	}
 
-	u := fmt.Sprintf("http://%s%s", host, path)
-	req, _ := http.NewRequest(util.EmptyOr(hc.cfg.Method, http.MethodGet), u, bytes.NewBuffer(b))
+	path := hc.cfg.Path[fastrand.Intn(len(hc.cfg.Path))]
+	host := hc.cfg.Host
+	if header := hc.cfg.Headers["Host"]; len(header) != 0 {
+		host = header[fastrand.Intn(len(header))]
+	}
+
+	u := fmt.Sprintf("http://%s%s", net.JoinHostPort(host, "80"), path)
+	req, err := http.NewRequest(utils.EmptyOr(hc.cfg.Method, http.MethodGet), u, bytes.NewBuffer(b))
+	if err != nil {
+		return 0, err
+	}
 	for key, list := range hc.cfg.Headers {
-		req.Header.Set(key, list[rand.Intn(len(list))])
+		req.Header.Set(key, list[fastrand.Intn(len(list))])
 	}
 	req.ContentLength = int64(len(b))
 	if err := req.Write(hc.Conn); err != nil {
