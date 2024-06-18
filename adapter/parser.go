@@ -79,21 +79,12 @@ func ParseProxy(mapping map[string]any) (C.Proxy, error) {
 		}
 		proxy, err = outbound.NewVless(*vlessOption)
 	case "trojan":
-		if isCubexAdapter(mapping) {
-			trojanOptionMc := &outbound.TrojanOption{ClientFingerprint: tlsC.GetGlobalFingerprint()}
-			err = decoder.Decode(mapping, trojanOptionMc)
-			if err != nil {
-				break
-			}
-			proxy, err = outbound.NewTrojan(*trojanOptionMc)
-		} else {
-			trojanOption := &outbound.TrojanOption{}
-			err = decoder.Decode(mapping, trojanOption)
-			if err != nil {
-				break
-			}
-			proxy, err = outbound.NewTrojan(*trojanOption)
+		trojanOption := &outbound.TrojanOption{ClientFingerprint: tlsC.GetGlobalFingerprint()}
+		err = decoder.Decode(mapping, trojanOption)
+		if err != nil {
+			break
 		}
+		proxy, err = outbound.NewTrojan(*trojanOption)
 	default:
 		return nil, fmt.Errorf("unsupport proxy type: %s", proxyType)
 	}

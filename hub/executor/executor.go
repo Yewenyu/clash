@@ -8,6 +8,7 @@ import (
 	"github.com/Dreamacro/clash/adapter"
 	"github.com/Dreamacro/clash/adapter/outboundgroup"
 	"github.com/Dreamacro/clash/component/auth"
+	"github.com/Dreamacro/clash/component/ca"
 	"github.com/Dreamacro/clash/component/dialer"
 	"github.com/Dreamacro/clash/component/iface"
 	"github.com/Dreamacro/clash/component/profile"
@@ -66,6 +67,13 @@ func ParseWithBytes(buf []byte) (*config.Config, error) {
 func ApplyConfig(cfg *config.Config, force bool) {
 	mux.Lock()
 	defer mux.Unlock()
+
+	ca.ResetCertificate()
+	// for _, c := range cfg.TLS.CustomTrustCert {
+	// 	if err := ca.AddCertificate(c); err != nil {
+	// 		log.Warnln("%s\nadd error: %s", c, err.Error())
+	// 	}
+	// }
 
 	updateUsers(cfg.Users)
 	updateProxies(cfg.Proxies, cfg.Providers)
