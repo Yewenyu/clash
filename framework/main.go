@@ -68,12 +68,12 @@ func SetupHomeDir(homeDirPath string) {
 var cfgPath = ""
 var externalControllerAddr = ""
 
-func RunByConfig(configPath string, externalController string) error {
+func RunByConfig(configString string, externalController string) error {
 	log.Infoln("start run")
-	cfgPath = configPath
+	// cfgPath = configPath
 	externalControllerAddr = externalController
-	constant.SetConfig(configPath)
-	rawConfig, err := GetRawCfgByPath(configPath)
+	// constant.SetConfig(configPath)
+	rawConfig, err := config.UnmarshalRawConfig([]byte(configString))
 	if err != nil {
 		return err
 	}
