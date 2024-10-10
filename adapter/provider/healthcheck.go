@@ -14,10 +14,6 @@ import (
 	"go.uber.org/atomic"
 )
 
-const (
-	defaultURLTestTimeout = time.Second * 5
-)
-
 type HealthCheckOption struct {
 	URL      string
 	Interval uint
@@ -74,13 +70,14 @@ func (hc *HealthCheck) checkAll() {
 }
 
 var HealthCheckCallBack func(result string)
+var URLTestTimeout int = 2
 
 func (hc *HealthCheck) check(proxies []C.Proxy) {
 	b, _ := batch.New(context.Background(), batch.WithConcurrencyNum(10))
 	for _, proxy := range proxies {
 		p := proxy
 		b.Go(p.Name(), func() (any, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), defaultURLTestTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(URLTestTimeout))
 			defer cancel()
 			p.URLTest(ctx, hc.url)
 			return nil, nil

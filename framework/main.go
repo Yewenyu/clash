@@ -160,7 +160,8 @@ type InfoCallBack interface {
 	HealthTest(result string)
 }
 
-func SetCallBack(callBack InfoCallBack) {
+func SetCallBack(callBack InfoCallBack, urlTestTimeoutSecond int) {
+	provider.URLTestTimeout = urlTestTimeoutSecond
 	provider.HealthCheckCallBack = func(result string) {
 		callBack.HealthTest(result)
 	}

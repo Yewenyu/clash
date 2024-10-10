@@ -1,6 +1,8 @@
 module clash
 
-go 1.21.4
+go 1.22.0
+
+toolchain go1.22.4
 
 require github.com/Dreamacro/clash v1.17.0
 
@@ -38,6 +40,7 @@ require (
 	github.com/oschwald/geoip2-golang v1.9.0 // indirect
 	github.com/oschwald/maxminddb-golang v1.11.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.14 // indirect
+	github.com/sagernet/gomobile v0.1.4 // indirect
 	github.com/sagernet/sing v0.2.19-0.20231207034108-445cd4f41e3f // indirect
 	github.com/samber/lo v1.38.1 // indirect
 	github.com/sina-ghaderi/poly1305 v0.0.0-20220724002748-c5926b03988b // indirect
@@ -51,15 +54,14 @@ require (
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
 	go.etcd.io/bbolt v1.3.7 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.24.0 // indirect
+	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/exp v0.0.0-20220428152302-39d4317da171 // indirect
-	golang.org/x/mobile v0.0.0-20240604190613-2782386b8afd // indirect
-	golang.org/x/mod v0.18.0 // indirect
-	golang.org/x/net v0.26.0 // indirect
-	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.21.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
-	golang.org/x/tools v0.22.0 // indirect
+	golang.org/x/mod v0.21.0 // indirect
+	golang.org/x/net v0.29.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/text v0.18.0 // indirect
+	golang.org/x/tools v0.25.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
