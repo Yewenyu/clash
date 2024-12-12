@@ -124,7 +124,7 @@ func (r *TRule) Match(meta *C.Metadata) (int, bool) {
 
 }
 
-func (r *TRule) handleDns(bytes []byte) {
+func (r *TRule) HandleDns(bytes []byte) {
 	err := dns.IsMsg(bytes)
 	if err != nil {
 		return
@@ -483,7 +483,7 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 			dnsCanHandle = time.Now().Unix()-initTime < int64(DnsCachTime)
 			l.Unlock()
 			if dnsCanHandle {
-				tRule.handleDns(r)
+				tRule.HandleDns(r)
 			}
 		}
 		if canUpdate {
@@ -525,7 +525,7 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 			select {
 			case response, ok := <-rChan:
 				if ok {
-					tRule.handleDns(response)
+					tRule.HandleDns(response)
 					if r == nil {
 						_, _ = v.conn.WriteToUDP(response, v.oAddr)
 					}

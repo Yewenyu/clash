@@ -4,13 +4,17 @@ mixed-port: 7779
 
 allow-lan: true
 
-bind-address: '0.0.0.0'
+bind-address: '127.0.0.1'
 
 
 mode: rule
 
 
 log-level: debug
+
+inbounds:
+  - type: socks
+    bind-address: 6.6.6.6:7892
 
 
 dns:
@@ -36,11 +40,18 @@ dns:
 
 proxies:
 - name: 'ss00'
-  type: ss
   server: 45.79.227.196
-  port: 37231
-  cipher: aes-256-gcm
-  password: zWlr2nxzM2U2qlZF
+  port: 443
+  type: trojan
+  password: "zd1lOrx8Z16hH401"
+  network: ws
+  sni: 
+  skip-cert-verify: true
+  udp: true
+  ws-opts:
+    path: /rainbow/mika
+  headers:
+    Host: 
 
 proxy-groups:
 - name: Proxy1

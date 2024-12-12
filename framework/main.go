@@ -14,6 +14,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+	"tunhandler"
 
 	"github.com/Dreamacro/clash/adapter/provider"
 	"github.com/Dreamacro/clash/config"
@@ -269,6 +270,10 @@ func SendConfig(tcpAddress string, configData string) string {
 
 func PProf(address string) {
 	go http.ListenAndServe(address, nil)
+}
+
+func HandleTun(fd, mtu int, ruleProxy string) string {
+	return tunhandler.CreateFD(fd, mtu, ruleProxy)
 }
 
 // func StartTun2socks(tunfd int, host string, port int, mtu int, udpEnable bool, udpTimeout int) string {
