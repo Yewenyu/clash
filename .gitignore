@@ -44,3 +44,4 @@ Country.mmdb
 .vscode/launch.json
 go.work.sum
 DNSCach
+ca.trust.crt

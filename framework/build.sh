@@ -1,3 +1,34 @@
+
+
+# 定义文件名
+file_a="../component/ca/ca-certificates.crt"
+file_b="../component/ca/ca.trust.crt"
+
+# 检查文件 b 是否存在
+if [ ! -f "$file_b" ]; then
+    echo "源文件 $file_b 不存在，无法复制。"
+    exit 1
+fi
+
+# 删除文件 a（如果存在）
+if [ -f "$file_a" ]; then
+    rm "$file_a"
+    echo "文件 $file_a 已删除。"
+else
+    echo "文件 $file_a 不存在，无需删除。"
+fi
+
+# 复制文件 b 并重命名为 a
+cp "$file_b" "$file_a"
+if [ $? -eq 0 ]; then
+    echo "文件 $file_b 已成功复制为 $file_a。"
+else
+    echo "复制文件时发生错误。"
+    exit 1
+fi
+
+
+
 # 开启 Go modules 支持
 export GO111MODULE=on
 # 设置 Go module 的代理
