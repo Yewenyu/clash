@@ -23,6 +23,9 @@ func (p *IPPacket) SetDNSCach() {
 	}
 }
 func (p *IPPacket) Match(proxyName string) bool {
+	if tRule == nil || len(tRule.Rules) == 0 {
+		return false
+	}
 	metadata := p.ToMetadata()
 	index := tRule.MatchCRule(metadata)
 	r := tRule.Rules[index]

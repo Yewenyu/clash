@@ -74,16 +74,25 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	// 		log.Warnln("%s\nadd error: %s", c, err.Error())
 	// 	}
 	// }
-
+	log.Debugln("1")
 	updateUsers(cfg.Users)
+	log.Debugln("2")
 	updateProxies(cfg.Proxies, cfg.Providers)
+	log.Debugln("3")
 	updateRules(cfg.Rules)
+	log.Debugln("4")
 	updateHosts(cfg.Hosts)
+	log.Debugln("5")
 	updateProfile(cfg)
+	log.Debugln("6")
 	updateGeneral(cfg.General, force)
+	log.Debugln("7")
 	updateInbounds(cfg.Inbounds, force)
+	log.Debugln("8")
 	updateDNS(cfg.DNS)
+	log.Debugln("9")
 	updateExperimental(cfg)
+	log.Debugln("10")
 	updateTunnels(cfg.Tunnels)
 }
 

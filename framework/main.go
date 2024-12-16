@@ -9,6 +9,7 @@ import "C"
 
 import (
 	"fmt"
+	"gts"
 	"net"
 	"os"
 	"runtime/debug"
@@ -274,6 +275,10 @@ func PProf(address string) {
 
 func HandleTun(fd, mtu int, ruleProxy string) string {
 	return tunhandler.CreateFD(fd, mtu, ruleProxy)
+}
+
+func StartGTS(config string, fd int) string {
+	return gts.StartGTSWith(config, fd)
 }
 
 // func StartTun2socks(tunfd int, host string, port int, mtu int, udpEnable bool, udpTimeout int) string {

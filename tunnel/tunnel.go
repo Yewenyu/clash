@@ -28,7 +28,6 @@ var (
 	tcpQueue = make(chan C.ConnContext, 200)
 	udpQueue = make(chan *inbound.PacketAdapter, 200)
 	natTable = nat.New()
-	rules    []C.Rule
 
 	proxies   = make(map[string]C.Proxy)
 	providers map[string]provider.ProxyProvider
@@ -60,14 +59,28 @@ func UDPIn() chan<- *inbound.PacketAdapter {
 
 // Rules return all rules
 func Rules() []C.Rule {
-	return rules
+	return tRule.Rules
+}
+
+type HandleRuleFunc = func(t *TRule) *TRule
+
+var handleRule HandleRuleFunc
+
+func SetHandleRule(t HandleRuleFunc) {
+	configMux.Lock()
+	handleRule = t
+	configMux.Unlock()
 }
 
 // UpdateRules handle update rules
 func UpdateRules(newRules []C.Rule) {
 	configMux.Lock()
-	rules = newRules
-	tRule = CreateTRule(rules)
+	rule := CreateTRule(newRules)
+	if handleRule != nil {
+		tRule = handleRule(rule)
+	} else {
+		tRule = rule
+	}
 	configMux.Unlock()
 }
 
@@ -406,8 +419,8 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 	}
 
 	_, _ = tRule.Match(metadata)
-	rules = tRule.Rules
-	for _, rule := range rules {
+
+	for _, rule := range tRule.Rules {
 		if !resolved && shouldResolveIP(rule, metadata) {
 			ip, err := resolver.ResolveIP(metadata.Host)
 			if err != nil {

@@ -485,7 +485,8 @@ func parseRules(cfg *RawConfig, proxies map[string]C.Proxy) ([]C.Rule, error) {
 		}
 
 		if _, ok := proxies[target]; !ok {
-			return nil, fmt.Errorf("rules[%d] [%s] error: proxy [%s] not found", idx, line, target)
+			// return nil, fmt.Errorf("rules[%d] [%s] error: proxy [%s] not found", idx, line, target)
+			log.Errorln("rules[%d] [%s] error: proxy [%s] not found", idx, line, target)
 		}
 
 		rule = trimArr(rule)

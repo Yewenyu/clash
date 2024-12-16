@@ -3,10 +3,13 @@ package tunhandler
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"syscall"
 
+	"github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/log"
+	"github.com/Dreamacro/clash/tunnel"
 )
 
 func setSocketBufferSize(fd int, size int) error {
@@ -120,8 +123,48 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 	defaultKey := "default"
 
 	ruleProxys := []string{defaultKey}
+
+	var handleProxy = false
+	starTun := func(logS string) {
+
+	}
+	defer func() {
+		if !handleProxy {
+			go starTun("default tun")
+		}
+	}()
+
 	if ruleProxy != "" {
-		ruleProxys = append(ruleProxys, strings.Split(ruleProxy, ",")...)
+		handleProxy = true
+		proxys := strings.Split(ruleProxy, ",")
+		tunnel.SetHandleRule(func(t *tunnel.TRule) *tunnel.TRule {
+			rs := t.Rules
+			directRules := make([]constant.Rule, 0)
+			proxyRules := make([]constant.Rule, 0)
+			proxyS := ""
+			directS := ""
+			for _, r := range rs {
+				if slices.Contains(proxys, r.Adapter()) {
+					proxyRules = append(proxyRules, r)
+					proxyS += r.Adapter() + "-"
+				} else {
+					directRules = append(directRules, r)
+					directS += r.Adapter() + "-"
+
+				}
+				if r.Adapter() == "DIRECT" {
+					proxyRules = append(proxyRules, r)
+					directRules = append(directRules, r)
+					proxyS += r.Adapter() + "-"
+					directS += r.Adapter() + "-"
+				}
+			}
+			SetRule(tunnel.CreateTRule(proxyRules))
+			t.Rules = directRules
+			go starTun(fmt.Sprintf("tun proxys:%s,proxyRules:%s,directRules:%s", proxys, proxyS, directS))
+			return t
+		})
+		ruleProxys = append(ruleProxys, proxys...)
 	}
 	fdMap := make(map[string]fdPipe)
 	outFD := OutFD{ProxyFD: make(map[string]int)}
@@ -141,33 +184,36 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 	}
 	tunName := "tunFd"
 
-	readWrteFD(tunFd, mtu, tunName, func(b []byte) (int, string) {
+	starTun = func(logS string) {
+		log.Infoln("startTun handle proxy: %v", logS)
+		readWrteFD(tunFd, mtu, tunName, func(b []byte) (int, string) {
 
-		// 不在这里先获取defaultKey，先尝试匹配
-		p, err := Unpack(b)
-		if err == nil && len(fdMap) > 1 {
-			for k, v := range fdMap {
-				// 跳过defaultKey，优先检查其他规则
-				if k == defaultKey {
-					continue
-				}
-				if p.Match(k) {
-					return v.in, v.name
-				}
-			}
-		}
-		// 如果前面没匹配上，就fallback到defaultKey
-		fdPipe := fdMap[defaultKey]
-		return fdPipe.in, fdPipe.name
-	})
-	for _, v := range fdMap {
-		readWrteFD(v.in, mtu, v.name, func(b []byte) (int, string) {
+			// 不在这里先获取defaultKey，先尝试匹配
 			p, err := Unpack(b)
-			if err == nil {
-				p.SetDNSCach()
+			if err == nil && len(fdMap) > 1 {
+				for k, v := range fdMap {
+					// 跳过defaultKey，优先检查其他规则
+					if k == defaultKey {
+						continue
+					}
+					if p.Match(k) {
+						return v.in, v.name
+					}
+				}
 			}
-			return tunFd, tunName
+			// 如果前面没匹配上，就fallback到defaultKey
+			fdPipe := fdMap[defaultKey]
+			return fdPipe.in, fdPipe.name
 		})
+		for _, v := range fdMap {
+			readWrteFD(v.in, mtu, v.name, func(b []byte) (int, string) {
+				p, err := Unpack(b)
+				if err == nil {
+					p.SetDNSCach()
+				}
+				return tunFd, tunName
+			})
+		}
 	}
 
 	return outFD.toJsonString()
