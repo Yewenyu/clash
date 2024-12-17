@@ -64,8 +64,20 @@ func createPipe() (int, int, error) {
 }
 
 type handleFdFunc = func([]byte) (int, string)
+type WriteFunc = func([]byte)
 
-func readWrteFD(from, mtu int, flabel string, handle handleFdFunc) {
+func writeFD(fd int, bytes []byte) {
+	// 将数据写入目标，处理部分写入的情况
+	for len(bytes) > 0 {
+		written, err := syscall.Write(fd, bytes)
+		if err != nil {
+			// log.Debugln("[tun handle][%s] Write failed: %v\n", tlabel, err)
+			continue
+		}
+		bytes = bytes[written:] // 更新剩余未写入数据
+	}
+}
+func readWrteFD(from, mtu int, flabel string, handle handleFdFunc, writeFunc WriteFunc) {
 	go func() {
 		buffer := make([]byte, mtu)
 		for {
@@ -76,24 +88,20 @@ func readWrteFD(from, mtu int, flabel string, handle handleFdFunc) {
 					// 非阻塞模式下没有数据可读时，跳过并继续
 					continue
 				}
-				log.Debugln("[tun handle][%s] Read failed: %v\n", flabel, err)
+				// log.Debugln("[tun handle][%s] Read failed: %v\n", flabel, err)
 				break
 			}
 			if n > 0 {
 				data := buffer[:n]
-				to, tlabel := handle(data)
-				log.Debugln("[tun handle][%s -> %s] read: %v\n", flabel, tlabel, n)
-
-				// 将数据写入目标，处理部分写入的情况
-				for len(data) > 0 {
-					written, err := syscall.Write(to, data)
-					if err != nil {
-						log.Debugln("[tun handle][%s] Write failed: %v\n", tlabel, err)
-						continue
-					}
-					data = data[written:] // 更新剩余未写入数据
-					log.Debugln("[tun handle][%s -> %s] write: %v\n", flabel, tlabel, written)
+				if writeFunc != nil {
+					writeFunc(data)
+					continue
 				}
+				to, tlabel := handle(data)
+				_ = tlabel
+				// log.Debugln("[tun handle][%s -> %s] read: %v\n", flabel, tlabel, n)
+
+				writeFD(to, data)
 			}
 		}
 	}()
@@ -197,6 +205,7 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 						continue
 					}
 					if p.Match(k) {
+						log.Debugln("[tun handle][rule match]%s match [%s]", p.DestinationIPString(), k)
 						return v.in, v.name
 					}
 				}
@@ -204,14 +213,23 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 			// 如果前面没匹配上，就fallback到defaultKey
 			fdPipe := fdMap[defaultKey]
 			return fdPipe.in, fdPipe.name
-		})
+		}, nil)
+
+		bytesChan := make(chan []byte, len(fdMap)*10)
+		go func() {
+			for {
+				b := <-bytesChan
+				writeFD(tunFd, b)
+			}
+		}()
 		for _, v := range fdMap {
-			readWrteFD(v.in, mtu, v.name, func(b []byte) (int, string) {
+			readWrteFD(v.in, mtu, v.name, nil, func(b []byte) {
 				p, err := Unpack(b)
 				if err == nil {
-					p.SetDNSCach()
+					go p.SetDNSCach()
 				}
-				return tunFd, tunName
+				newb := append([]byte(nil), b...)
+				go func(b []byte) { bytesChan <- b }(newb)
 			})
 		}
 	}

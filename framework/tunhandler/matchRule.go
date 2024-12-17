@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	C "github.com/Dreamacro/clash/constant"
+	"github.com/Dreamacro/clash/log"
 	"github.com/Dreamacro/clash/tunnel"
 )
 
@@ -19,17 +20,39 @@ func SetRule(r *tunnel.TRule) {
 func (p *IPPacket) SetDNSCach() {
 	if p.IsDNS() && tRule != nil {
 		dns, _ := p.GetDNSMessage()
-		tRule.HandleDns(dns)
+		_ = tRule.HandleDns(dns)
+
 	}
 }
 func (p *IPPacket) Match(proxyName string) bool {
 	if tRule == nil || len(tRule.Rules) == 0 {
 		return false
 	}
+	isContains := func(metadata *C.Metadata) bool {
+		index, exist := tRule.Match(metadata)
+		if exist {
+			r := tRule.Rules[index]
+			return strings.Contains(r.Adapter(), proxyName)
+		}
+		return false
+	}
+	if p.IsDNS() {
+		metadata := p.ToMetadata()
+		dnsHosts, err := p.GetDNSQueryNames()
+		if err == nil {
+			for _, h := range dnsHosts {
+				metadata.Host = h
+				contains := isContains(metadata)
+				if contains {
+					log.Debugln("[tun handle][rule match]dns %s query %s match [%s]", p.GetDNSServerAddress(), h, proxyName)
+					return contains
+				}
+			}
+		}
+	}
 	metadata := p.ToMetadata()
-	index := tRule.MatchCRule(metadata)
-	r := tRule.Rules[index]
-	return strings.Contains(r.Adapter(), proxyName)
+
+	return isContains(metadata)
 }
 
 func (p *IPPacket) ToMetadata() *C.Metadata {

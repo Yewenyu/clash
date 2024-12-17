@@ -34,7 +34,7 @@ type TRule struct {
 	Rules     []C.Rule
 	domainMap map[string]int
 	dnsMap    map[string]string
-	l         sync.Mutex
+	l         sync.RWMutex
 }
 
 func CreateTRule(rules []C.Rule) *TRule {
@@ -124,10 +124,10 @@ func (r *TRule) Match(meta *C.Metadata) (int, bool) {
 
 }
 
-func (r *TRule) HandleDns(bytes []byte) {
+func (r *TRule) HandleDns(bytes []byte) error {
 	err := dns.IsMsg(bytes)
 	if err != nil {
-		return
+		return err
 	}
 	msg := new(dns.Msg)
 	_ = msg.Unpack(bytes)
@@ -151,7 +151,7 @@ func (r *TRule) HandleDns(bytes []byte) {
 		}
 	}
 	log.Debugln("[DNS handle] %s --> %s", qName, msg.Answer)
-
+	return nil
 }
 func dnsDir() string {
 	homedir := C.Path.HomeDir()
