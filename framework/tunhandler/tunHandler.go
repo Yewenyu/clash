@@ -196,6 +196,7 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 		log.Infoln("startTun handle proxy: %v", logS)
 		readWrteFD(tunFd, mtu, tunName, func(b []byte) (int, string) {
 
+			StartCapture(b)
 			// 不在这里先获取defaultKey，先尝试匹配
 			p, err := Unpack(b)
 			if err == nil && len(fdMap) > 1 {
@@ -210,8 +211,10 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 					}
 				}
 			}
+
 			// 如果前面没匹配上，就fallback到defaultKey
 			fdPipe := fdMap[defaultKey]
+			log.Debugln("[tun handle][rule match]%s match [%s]", p.DestinationIPString(), defaultKey)
 			return fdPipe.in, fdPipe.name
 		}, nil)
 
@@ -219,6 +222,7 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 		go func() {
 			for {
 				b := <-bytesChan
+				StartCapture(b)
 				writeFD(tunFd, b)
 			}
 		}()

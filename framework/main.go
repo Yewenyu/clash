@@ -273,6 +273,14 @@ func PProf(address string) {
 	go http.ListenAndServe(address, nil)
 }
 
+func StartCapture(path string) {
+	tunhandler.WritePath = path
+	tunhandler.CanCapture = true
+}
+func GetCaptureInfos(path string) string {
+	return tunhandler.GetHostInfosString(path)
+}
+
 func HandleTun(fd, mtu int, ruleProxy string) string {
 	return tunhandler.CreateFD(fd, mtu, ruleProxy)
 }

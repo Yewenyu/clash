@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net"
 	"strings"
+
+	"github.com/miekg/dns"
 )
 
 type IPPacket struct {
@@ -274,4 +276,15 @@ func parseQNAME(dnsMessage []byte, offset int) (string, int, error) {
 // 对于发往 DNS 服务器的查询包，DNS 服务器通常为包的目的 IP。
 func (p *IPPacket) GetDNSServerAddress() string {
 	return net.IP(p.DestinationIP[:]).String()
+}
+
+func (p *IPPacket) toDNS() *dns.Msg {
+	if !p.IsDNS() {
+		return nil
+	}
+	b, _ := p.GetDNSMessage()
+	msg := new(dns.Msg)
+	_ = msg.Unpack(b)
+
+	return msg
 }
