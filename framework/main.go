@@ -273,9 +273,12 @@ func PProf(address string) {
 	go http.ListenAndServe(address, nil)
 }
 
-func StartCapture(path string) {
+func StartCapture(path string, httpAddr, targetAddr string) {
 	tunhandler.WritePath = path
 	tunhandler.CanCapture = true
+	if httpAddr != "" {
+		go tunhandler.StartHttpCapture(httpAddr, targetAddr)
+	}
 }
 func GetCaptureInfos(path string) string {
 	return tunhandler.GetHostInfosString(path)
