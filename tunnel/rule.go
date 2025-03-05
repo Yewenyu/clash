@@ -777,10 +777,10 @@ type UDPConnection struct {
 	mapMutex              sync.Mutex
 	wg                    sync.WaitGroup
 	proxyAddr, remoteAddr string
+	connectMutex          sync.Mutex // 用于保护连接操作
 }
 
 func NewUDPConnection(proxyAddr string, remoteAddr string) (*UDPConnection, error) {
-
 	uc := &UDPConnection{
 		proxyAddr:  proxyAddr,
 		remoteAddr: remoteAddr,
@@ -788,30 +788,39 @@ func NewUDPConnection(proxyAddr string, remoteAddr string) (*UDPConnection, erro
 		recvChan:   make(chan *DNSInfo),
 		queryMap:   make(map[uint16]*DNSInfo),
 	}
-
 	uc.wg.Add(2)
 	go uc.sender()
 	go uc.receiver()
-
 	return uc, nil
 }
+
 func (uc *UDPConnection) initConnect() {
-	tcpConn, err := net.Dial("tcp", uc.proxyAddr)
-	if err != nil {
+	uc.connectMutex.Lock()
+	defer uc.connectMutex.Unlock()
+
+	if uc.conn != nil {
 		return
 	}
+
+	tcpConn, err := net.Dial("tcp", uc.proxyAddr)
+	if err != nil {
+		fmt.Println("Error dialing TCP:", err)
+		return
+	}
+	defer tcpConn.Close()
+
 	addr, err := socks5.ClientHandshake(tcpConn, socks5.ParseAddr(uc.remoteAddr), socks5.CmdUDPAssociate, nil)
 	if err != nil {
-		tcpConn.Close()
+		fmt.Println("Error during SOCKS5 handshake:", err)
 		return
 	}
 	boundUDPAddr := addr.UDPAddr()
 	udpConn, err := net.DialUDP("udp", nil, boundUDPAddr)
 	if err != nil {
+		fmt.Println("Error dialing UDP:", err)
 		return
 	}
 	uc.conn = udpConn
-
 }
 
 func (uc *UDPConnection) sender() {
@@ -828,7 +837,6 @@ func (uc *UDPConnection) sender() {
 			continue
 		}
 
-		// 编码目标地址和负载数据
 		packet, err := socks5.EncodeUDPPacket(socks5.ParseAddr(info.remoteAddr), info.bytes)
 		if err != nil {
 			info.err = err
@@ -838,22 +846,24 @@ func (uc *UDPConnection) sender() {
 		uc.mapMutex.Lock()
 		uc.queryMap[msg.Id] = info
 		uc.mapMutex.Unlock()
+
 		go func(id uint16) {
 			<-time.After(5 * time.Second)
 			uc.mapMutex.Lock()
-			query, found := uc.queryMap[id]
+			info, found := uc.queryMap[id]
+			if !found {
+				uc.mapMutex.Unlock()
+				return
+			}
 			delete(uc.queryMap, id)
 			uc.mapMutex.Unlock()
-			if found {
-				info.err = fmt.Errorf("time out")
-				uc.recvChan <- query
-			}
-
+			info.err = fmt.Errorf("timeout")
+			uc.recvChan <- info
 		}(msg.Id)
+
 		if _, err := uc.conn.Write(packet); err != nil {
 			info.err = err
 			uc.recvChan <- info
-			continue
 		}
 	}
 }
@@ -863,15 +873,14 @@ func (uc *UDPConnection) receiver() {
 	buffer := make([]byte, 4096)
 	for {
 		if uc.conn == nil {
+			time.Sleep(time.Second) // 等待一段时间再尝试检查连接
 			continue
 		}
-		// uc.conn.SetReadDeadline(time.Now().Add(time.Duration(dnsTimeout) * time.Second))
 		n, _, err := uc.conn.ReadFromUDP(buffer)
 		if err != nil {
 			continue
 		}
 		bytes := buffer[:n]
-		// 解码收到的数据包
 		_, payload, err := socks5.DecodeUDPPacket(bytes)
 		if err != nil {
 			continue
@@ -882,19 +891,21 @@ func (uc *UDPConnection) receiver() {
 		}
 		uc.mapMutex.Lock()
 		query, found := uc.queryMap[response.Id]
+		delete(uc.queryMap, response.Id)
 		uc.mapMutex.Unlock()
 		if found {
 			query.bytes = payload
 			uc.recvChan <- query
-			uc.mapMutex.Lock()
-			delete(uc.queryMap, response.Id)
-			uc.mapMutex.Unlock()
 		}
 	}
 }
 
 func (uc *UDPConnection) Close() {
 	close(uc.sendChan)
+	// 确保所有消息都已发送和接收
+	for len(uc.recvChan) > 0 {
+		time.Sleep(100 * time.Millisecond)
+	}
 	uc.conn.Close()
 	uc.wg.Wait()
 }
