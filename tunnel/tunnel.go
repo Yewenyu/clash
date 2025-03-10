@@ -397,8 +397,17 @@ func handleTCPConn1(connCtx C.ConnContext) {
 			metadata.RemoteAddress(),
 		)
 	}
+	useHttpTimeout := false
+	useDNSTimeout := false
+	if metadata.DstPort == 80 || metadata.DstPort == 443 {
+
+		useHttpTimeout = metadata.Type == C.SOCKS5
+	}
+	if metadata.DstPort == 53 {
+		useDNSTimeout = true
+	}
 	// remoteConn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	handleSocket(connCtx, remoteConn)
+	handleSocket(connCtx, remoteConn, useHttpTimeout, useDNSTimeout)
 }
 
 func shouldResolveIP(rule C.Rule, metadata *C.Metadata) bool {

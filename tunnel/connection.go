@@ -56,6 +56,6 @@ func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, 
 	}
 }
 
-func handleSocket(ctx C.ConnContext, outbound net.Conn) {
-	N.Relay(ctx.Conn(), outbound)
+func handleSocket(ctx C.ConnContext, outbound net.Conn, useHttpTimeout, useDNSTimeout bool) {
+	N.Relay(ctx.Conn(), outbound, useHttpTimeout, useDNSTimeout)
 }

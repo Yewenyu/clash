@@ -32,16 +32,14 @@ var (
 
 type TRule struct {
 	Rules     []C.Rule
-	domainMap map[string]int
-	dnsMap    map[string]string
+	machIpMap map[string]int
 	l         sync.RWMutex
 }
 
 func CreateTRule(rules []C.Rule) *TRule {
 	tr := &TRule{}
 	tr.Rules = rules
-	tr.domainMap = make(map[string]int)
-	tr.dnsMap = make(map[string]string)
+	tr.machIpMap = make(map[string]int)
 	return tr
 }
 
@@ -55,72 +53,10 @@ func (r *TRule) MatchCRule(meta *C.Metadata) int {
 }
 func (r *TRule) Match(meta *C.Metadata) (int, bool) {
 
-	r.l.Lock()
-	defer r.l.Unlock()
-	index, exist := -1, false
-	if meta.Host != "" {
-		index, exist = r.domainMap[meta.Host]
-	}
-	handleMap := func() (int, bool) {
-		index := r.MatchCRule(meta)
-		if index != -1 {
-			if index != len(r.Rules)-1 {
-				var v = meta.Host
-				if v == "" {
-					v = meta.DstIP.String()
-				}
-				r.domainMap[v] = index
-			}
-			return index, true
-		}
-		return index, false
-	}
-	if !exist {
-		index, exist = r.domainMap[meta.DstIP.String()]
-		if !exist {
-			host, exist := r.dnsMap[meta.DstIP.String()]
-			log.Debugln("[TRULE] dnsMap %s --> %s", meta.DstIP.String(), host)
-			if exist {
-				index, exist = r.domainMap[host]
-				if !exist {
-					handle := func() {}
-					if meta.Host == "" {
-						meta.Host = host
-						handle = func() {
-							meta.Host = ""
-						}
-					}
-					_, _ = handleMap()
-					handle()
-					index, exist = r.domainMap[host]
-				}
-				if exist {
-					hRule := r.Rules[index]
-
-					payload := meta.DstIP.String()
-					if meta.DstIP.To4() == nil {
-						payload += "/128"
-					} else {
-						payload += "/32"
-					}
-					ipRule, err := R.ParseRule("IP-CIDR", payload, hRule.Adapter(), nil)
-					if err == nil {
-						index = len(r.Rules) - 1
-						last := r.Rules[index]
-						r.domainMap[meta.DstIP.String()] = index
-						r.Rules = append(r.Rules[:index], ipRule)
-						r.Rules = append(r.Rules, last)
-
-						return index, true
-					}
-				}
-			}
-		}
-	}
-	if !exist {
-		return handleMap()
-	}
-	return index, exist
+	i := r.MatchCRule(meta)
+	// r.l.Lock()
+	// defer r.l.Unlock()
+	return i, i != -1
 
 }
 
@@ -141,15 +77,47 @@ func (r *TRule) HandleDns(bytes []byte) error {
 		qName = trimLastDot(q.Name)
 		break
 	}
+	cM := C.Metadata{
+		Host: qName,
+	}
+	index, ok := r.Match(&cM)
+	if !ok {
+		return fmt.Errorf("dns not match rule")
+	}
+	hRule := r.Rules[index]
+	if hRule.Payload() == "" {
+		return nil
+	}
+
+	appendRule := func(ip string) {
+		// 检查是否已经存在
+		if _, ok := r.machIpMap[ip]; ok {
+			return
+		}
+		ipRule, err := R.ParseRule("IP-CIDR", ip, hRule.Adapter(), nil)
+		if err != nil {
+			return
+		}
+		index = len(r.Rules) - 1
+		last := r.Rules[index]
+		r.Rules = append(r.Rules[:index], ipRule)
+		r.Rules = append(r.Rules, last)
+		r.machIpMap[ip] = index
+	}
 
 	for _, rr := range msg.Answer {
 		switch v := rr.(type) {
 		case *dns.A:
-			r.dnsMap[v.A.String()] = qName
+			payload := v.A.String()
+			payload += "/32"
+			appendRule(payload)
 		case *dns.AAAA:
-			r.dnsMap[v.AAAA.String()] = qName
+			payload := v.AAAA.String()
+			payload += "/128"
+			appendRule(payload)
 		}
 	}
+
 	log.Debugln("[DNS handle] %s --> %s", qName, msg.Answer)
 	return nil
 }

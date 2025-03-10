@@ -64,6 +64,6 @@ func handleUpgrade(conn net.Conn, request *http.Request, in chan<- C.ConnContext
 	}
 
 	if resp.StatusCode == http.StatusSwitchingProtocols {
-		N.Relay(bufferedLeft, conn)
+		N.Relay(bufferedLeft, conn, false, false)
 	}
 }

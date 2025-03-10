@@ -8,8 +8,10 @@ import (
 )
 
 var (
-	TcpTimeout = 5
-	UdpTimeOut = 5
+	TcpTimeout  = 5
+	UdpTimeOut  = 5
+	HttpTimeout = 5
+	DNSTimeout  = 5
 )
 
 // Relay copies between left and right bidirectionally.
@@ -36,31 +38,52 @@ var pool = sync.Pool{
 	},
 }
 
-func Relay(leftConn, rightConn net.Conn) {
+func Relay(leftConn, rightConn net.Conn, useHttpTimeout bool, useDNSTimeout bool) {
 	if TCPBufferSize == 0 {
 		Relay1(leftConn, rightConn)
 		return
 	}
 	// handle(cChan, &handleO)
-	handle := func(w, r net.Conn, readTimeout bool) {
+	// 如果两个连接在指定时间内有数据交互，则继续连接，否则关闭连接
+	timeout := TcpTimeout
+	if useHttpTimeout {
+		timeout = HttpTimeout
+	}
+	if useDNSTimeout {
+		timeout = DNSTimeout
+	}
+	timeLock := time.NewTimer(time.Duration(timeout) * time.Second)
+
+	handle := func(w, r net.Conn) {
 		b := pool.Get().([]byte)
 		defer pool.Put(b)
 		defer w.Close()
+	loop:
 		for {
-			if readTimeout {
-				r.SetReadDeadline(time.Now().Add(time.Duration(TcpTimeout) * time.Second))
+			select {
+			case <-timeLock.C:
+				break loop
+			default:
+				// 更新连接时间
+				timeLock.Reset(time.Duration(timeout) * time.Second)
+				r.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+				n, err := r.Read(b)
+				if err != nil {
+					// 如果读取超时，继续循环
+					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+						continue
+					}
+					break loop
+				}
+				_, err = w.Write(b[:n])
+				if err != nil {
+					break loop
+				}
 			}
-			n, err := r.Read(b)
-			if err != nil {
-				break
-			}
-			_, err = w.Write(b[:n])
-			if err != nil {
-				break
-			}
+
 		}
 	}
-	go handle(rightConn, leftConn, false)
-	handle(leftConn, rightConn, true)
+	go handle(rightConn, leftConn)
+	handle(leftConn, rightConn)
 	rightConn.SetReadDeadline(time.Now())
 }
