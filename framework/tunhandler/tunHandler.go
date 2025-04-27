@@ -10,6 +10,7 @@ import (
 	"github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/log"
 	"github.com/Dreamacro/clash/tunnel"
+	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
 )
 
 func setSocketBufferSize(fd int, size int) error {
@@ -145,7 +146,7 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 	if ruleProxy != "" {
 		handleProxy = true
 		proxys := strings.Split(ruleProxy, ",")
-		tunnel.SetHandleRule(func(t *tunnel.TRule) *tunnel.TRule {
+		tunnel.SetHandleRule(func(t *dnstunnel.TRule) *dnstunnel.TRule {
 			rs := t.Rules
 			directRules := make([]constant.Rule, 0)
 			proxyRules := make([]constant.Rule, 0)
@@ -167,7 +168,7 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 					directS += r.Adapter() + "-"
 				}
 			}
-			SetRule(tunnel.CreateTRule(proxyRules))
+			SetRule(dnstunnel.CreateTRule(proxyRules))
 			t.Rules = directRules
 			go starTun(fmt.Sprintf("tun proxys:%s,proxyRules:%s,directRules:%s", proxys, proxyS, directS))
 			return t

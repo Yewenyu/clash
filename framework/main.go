@@ -23,6 +23,7 @@ import (
 	"github.com/Dreamacro/clash/hub/executor"
 	"github.com/Dreamacro/clash/log"
 	t "github.com/Dreamacro/clash/tunnel"
+	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
 	"github.com/Dreamacro/clash/tunnel/statistic"
 
 	// "github.com/eycorsican/go-tun2socks/client"
@@ -151,7 +152,7 @@ func SetMixMaxCount(mix, tcp, udp int) {
 	t.ProcessUDP(udp)
 }
 func DNSCachTime(second int) {
-	t.DnsCachTime = second
+	dnstunnel.DnsCachTime = second
 }
 func SetConnTimeout(tcp, udp, http, dns int) {
 	N.TcpTimeout = tcp
@@ -172,8 +173,8 @@ func SetCallBack(callBack InfoCallBack, urlTestTimeoutSecond int) {
 }
 
 func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs, dohHosts string, maxDnsConnectCount int) {
-	t.MaxDnsConnectCount = maxDnsConnectCount
-	go t.ListenDNS(localAddr, socks5Addr, mode, cach, strings.Split(dnsAddrs, ","), strings.Split(dohHosts, ","))
+	dnstunnel.MaxDnsConnectCount = maxDnsConnectCount
+	go dnstunnel.ListenDNS(localAddr, socks5Addr, mode, cach, strings.Split(dnsAddrs, ","), strings.Split(dohHosts, ","))
 }
 
 func ListenUDP(targetAddr, localAddr string) {

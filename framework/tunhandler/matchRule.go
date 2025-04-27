@@ -7,14 +7,14 @@ import (
 
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/log"
-	"github.com/Dreamacro/clash/tunnel"
+	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
 )
 
 var (
-	tRule *tunnel.TRule
+	tRule *dnstunnel.TRule
 )
 
-func SetRule(r *tunnel.TRule) {
+func SetRule(r *dnstunnel.TRule) {
 	tRule = r
 }
 func (p *IPPacket) SetDNSCach() {

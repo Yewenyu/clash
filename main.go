@@ -20,6 +20,7 @@ import (
 	"github.com/Dreamacro/clash/hub"
 	"github.com/Dreamacro/clash/hub/executor"
 	"github.com/Dreamacro/clash/log"
+	"github.com/Dreamacro/clash/tunnel"
 
 	"go.uber.org/automaxprocs/maxprocs"
 )
@@ -69,13 +70,14 @@ func main() {
 	C.SetHomeDir(currentPath)
 	// clash.SetBufferSize(1024, 1024*5)
 	// clash.SetGCPrecent(20)
-	clash.SetMixMaxCount(100, 70, 20)
+	clash.SetMixMaxCount(100, 70, 5)
 	clash.SetBufferSize(1024, 1024*10)
 	clash.DNSCachTime(300)
-	// go tunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", "udp,tcp,doh", true, []string{"208.67.222.222", "8.8.8.8"}, []string{})
+	go tunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", "tcp", false, []string{"208.67.222.222", "8.8.8.8"}, []string{})
 	go listenConfig()
 	// go tool pprof -http=:8081 http://localhost:6060/debug/pprof/goroutine
 	go http.ListenAndServe(":6060", nil)
+	runtime.SetBlockProfileRate(1)
 
 	if configFile != "" {
 		if !filepath.IsAbs(configFile) {

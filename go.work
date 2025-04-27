@@ -1,9 +1,11 @@
-go 1.22.4
+go 1.23.0
+
+toolchain go1.23.4
 
 use (
 	.
 	./framework
-	./framework/tunhandler
 	./framework/gts
+	./framework/tunhandler
 	./test
 )

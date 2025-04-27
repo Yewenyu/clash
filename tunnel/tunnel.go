@@ -18,6 +18,7 @@ import (
 	"github.com/Dreamacro/clash/constant/provider"
 	icontext "github.com/Dreamacro/clash/context"
 	"github.com/Dreamacro/clash/log"
+	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
 	"github.com/Dreamacro/clash/tunnel/statistic"
 
 	gl "github.com/Yewenyu/GoLimiter"
@@ -59,10 +60,10 @@ func UDPIn() chan<- *inbound.PacketAdapter {
 
 // Rules return all rules
 func Rules() []C.Rule {
-	return tRule.Rules
+	return dnstunnel.Out_tRule.Rules
 }
 
-type HandleRuleFunc = func(t *TRule) *TRule
+type HandleRuleFunc = func(t *dnstunnel.TRule) *dnstunnel.TRule
 
 var handleRule HandleRuleFunc
 
@@ -75,11 +76,11 @@ func SetHandleRule(t HandleRuleFunc) {
 // UpdateRules handle update rules
 func UpdateRules(newRules []C.Rule) {
 	configMux.Lock()
-	rule := CreateTRule(newRules)
+	rule := dnstunnel.CreateTRule(newRules)
 	if handleRule != nil {
-		tRule = handleRule(rule)
+		dnstunnel.Out_tRule = handleRule(rule)
 	} else {
-		tRule = rule
+		dnstunnel.Out_tRule = rule
 	}
 	configMux.Unlock()
 }
@@ -427,9 +428,9 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 		resolved = true
 	}
 
-	_, _ = tRule.Match(metadata)
+	_, _ = dnstunnel.Out_tRule.Match(metadata)
 
-	for _, rule := range tRule.Rules {
+	for _, rule := range dnstunnel.Out_tRule.Rules {
 		if !resolved && shouldResolveIP(rule, metadata) {
 			ip, err := resolver.ResolveIP(metadata.Host)
 			if err != nil {
