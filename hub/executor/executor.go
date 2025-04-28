@@ -118,6 +118,9 @@ func updateExperimental(c *config.Config) {
 }
 
 func updateDNS(c *config.DNS) {
+	if resolver.DefaultResolver != nil {
+		return
+	}
 	if !c.Enable {
 		resolver.DefaultResolver = nil
 		resolver.DefaultHostMapper = nil
