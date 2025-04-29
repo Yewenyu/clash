@@ -176,6 +176,9 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs, dohHosts
 	dnstunnel.MaxDnsConnectCount = maxDnsConnectCount
 	go dnstunnel.ListenDNS(localAddr, socks5Addr, mode, cach, strings.Split(dnsAddrs, ","), strings.Split(dohHosts, ","))
 }
+func SetupHttpDNSResolve(proxyAddr, dnsAddrs string, timeout int) {
+	go dnstunnel.SetupHttpDNSResolver(proxyAddr, strings.Split(dnsAddrs, ","), timeout)
+}
 
 func ListenUDP(targetAddr, localAddr string) {
 	// 服务器监听的地址

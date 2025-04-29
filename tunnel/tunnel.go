@@ -428,9 +428,7 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 		resolved = true
 	}
 
-	_, _ = dnstunnel.Out_tRule.Match(metadata)
-
-	for _, rule := range dnstunnel.Out_tRule.Rules {
+	for _, rule := range dnstunnel.Out_tRule.GetRule() {
 		if !resolved && shouldResolveIP(rule, metadata) {
 			ip, err := resolver.ResolveIP(metadata.Host)
 			if err != nil {
