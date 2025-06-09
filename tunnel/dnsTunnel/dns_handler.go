@@ -237,7 +237,7 @@ func handleDNSDirect(server, network string, bytes []byte) ([]byte, error) {
 	c.Net = network
 	m.RecursionDesired = true
 
-	r, _, err := c.Exchange(m, server+":53")
+	r, _, err := c.Exchange(m, server)
 	if err != nil {
 		return nil, fmt.Errorf("[DNS direct] query err: %v", err)
 	}
@@ -246,6 +246,10 @@ func handleDNSDirect(server, network string, bytes []byte) ([]byte, error) {
 }
 
 func handleTCPDNS(socks5Addr, dnsServerAddr string, dnsBytes []byte) ([]byte, error) {
+
+	if socks5Addr == "" {
+		return handleDNSDirect(dnsServerAddr, "tcp", dnsBytes)
+	}
 	dialer, err := proxy.SOCKS5("tcp", socks5Addr, nil, proxy.Direct)
 	if err != nil {
 		return nil, fmt.Errorf("[DNS TCP] create SOCKS5 dialer failed: %v", err)

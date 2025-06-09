@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Dreamacro/clash/component/resolver"
@@ -19,6 +21,7 @@ type UDPResolver struct {
 	serverAddrs   []string         // DNS服务器地址列表（格式：ip:port）
 	timeout       time.Duration    // 单次查询超时时间
 	roundRobinIdx int              // 轮询策略当前索引
+	socks5Addr    string           // SOCKS5代理地址（可选）
 }
 
 // ResolverConfig 解析器配置
@@ -52,10 +55,14 @@ func (r *UDPResolver) LookupIPv4(ctx context.Context, host string) ([]net.IP, er
 			return []net.IP{ip}, nil
 		}
 	}
+	//判断域名长度
+	if len(host) > 253 {
+		return nil, errors.New("域名长度超过限制")
+	}
 	msg := new(dns.Msg)
 	msg.SetQuestion(dns.Fqdn(host), dns.TypeA)
 	resp, err := r.exchangeWithStrategy(ctx, msg)
-	if err != nil {
+	if err != nil || resp == nil {
 		return nil, fmt.Errorf("IPv4查询失败: %w", err)
 	}
 	return r.extractIPs(resp, dns.TypeA), nil
@@ -174,6 +181,7 @@ func NewUDPResolver(cfg ResolverConfig) (*UDPResolver, error) {
 		serverAddrs:   cfg.ServerAddrs,
 		timeout:       cfg.Timeout,
 		roundRobinIdx: 0,
+		socks5Addr:    cfg.SOCKS5Proxy,
 	}, nil
 }
 
@@ -181,10 +189,181 @@ func (r *UDPResolver) exchangeWithStrategy(ctx context.Context, m *dns.Msg) (*dn
 	return r.concurrentExchange(ctx, m)
 }
 
+type DNSCacheInfo struct {
+	msg        *dns.Msg
+	ttl        int64
+	isQuerying bool
+	waitQuery  chan chan *DNSCacheInfo
+}
+
+var dnsCach = make(map[string]*DNSCacheInfo)
+var dnsLock sync.Mutex
+var lastQueyTime = time.Now().Unix()
+
 func (r *UDPResolver) concurrentExchange(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
-	respChan := make(chan *dns.Msg, len(r.connections))
+
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
+
+	dnsLock.Lock()
+	dnsC, ok := dnsCach[m.Question[0].Name]
+	if len(dnsCach) > 100 || time.Now().Unix()-lastQueyTime > 300 {
+		// 按ttl排序
+		type kv struct {
+			Key   string
+			Value *DNSCacheInfo
+		}
+		var ss []kv
+		for k, v := range dnsCach {
+			ss = append(ss, kv{k, v})
+		}
+		sort.Slice(ss, func(i, j int) bool {
+			return ss[i].Value.ttl < ss[j].Value.ttl
+		})
+		for i := 0; i < 10 && i < len(ss)/2; i++ {
+			delete(dnsCach, ss[i].Key)
+		}
+	}
+	lastQueyTime = time.Now().Unix()
+
+	dnsLock.Unlock()
+	if ok {
+		if dnsC.isQuerying {
+			waitQuery := make(chan *DNSCacheInfo)
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("所有服务器查询超时: %v", ctx.Err())
+			case dnsC.waitQuery <- waitQuery:
+				select {
+				case <-ctx.Done():
+					return nil, fmt.Errorf("所有服务器查询超时: %v", ctx.Err())
+				case newC := <-waitQuery:
+					return newC.msg, nil
+				}
+			}
+
+		} else {
+			return dnsC.msg, nil
+		}
+	} else {
+		dnsLock.Lock()
+		dnsC = &DNSCacheInfo{
+			isQuerying: true,
+			waitQuery:  make(chan chan *DNSCacheInfo),
+		}
+		dnsCach[m.Question[0].Name] = dnsC
+		dnsLock.Unlock()
+		if strings.Contains(m.Question[0].Name, "bilivideo.com") {
+			_ = m
+		}
+		//dns递归查询
+		m.RecursionDesired = true
+		resp, err := r.query(ctx, m)
+		if err != nil {
+			return nil, err
+		}
+		dnsLock.Lock()
+		dnsC.isQuerying = false
+		if err == nil && resp != nil && len(resp.Answer) > 0 {
+			dnsC.msg = resp
+			dnsC.ttl = time.Now().Unix() + int64(resp.Answer[0].Header().Ttl)
+			dnsCach[m.Question[0].Name] = dnsC
+
+			go func() {
+			loop:
+				for {
+					select {
+					case <-time.After(5 * time.Second):
+						break loop
+					case c := <-dnsC.waitQuery:
+						c <- dnsC
+
+					}
+				}
+
+			}()
+		} else {
+			delete(dnsCach, m.Question[0].Name)
+		}
+		dnsLock.Unlock()
+		return resp, err
+
+	}
+
+}
+
+func (r *UDPResolver) defaultQuery(host string) ([]net.IP, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
+	defer cancel()
+	ipAddrs, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
+	if err != nil {
+		return nil, err
+	} else if len(ipAddrs) == 0 {
+		return nil, fmt.Errorf("%w: %s", "not found", host)
+	}
+	return ipAddrs, nil
+}
+func (r *UDPResolver) tcpQuery(host, dnsAddr string, useProxy bool) (*dns.Msg, error) {
+	query := new(dns.Msg)
+	query.SetQuestion(host, dns.TypeA)
+	queryBytes, _ := query.Pack()
+	socksAddr := ""
+	if useProxy {
+		socksAddr = r.socks5Addr
+	}
+	bytes, err := handleTCPDNS(socksAddr, dnsAddr, queryBytes)
+	if err != nil {
+		return nil, err
+	}
+	msg := new(dns.Msg)
+	if err := msg.Unpack(bytes); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+func (r *UDPResolver) query(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
+	respChan := make(chan *dns.Msg, len(r.connections))
+	errChan := make(chan error, len(r.connections))
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+
+	handleDNSBytes := func(bytes []byte, isTCPResult bool) (*dns.Msg, error) {
+		newMsg := new(dns.Msg)
+		if err := newMsg.Unpack(bytes); err != nil {
+			return nil, err
+		}
+
+		if len(newMsg.Answer) == 0 && len(newMsg.Ns) > 0 {
+			host := newMsg.Ns[0].Header().Name
+
+			ns := newMsg.Ns[0]
+			//判断ns是否是*dns.SOA或*dns.Ns类型，使用switch判断
+			dnsHost := ""
+			switch ns := ns.(type) {
+			case *dns.SOA:
+				dnsHost = ns.Ns
+			case *dns.NS:
+				dnsHost = ns.Ns
+			default:
+				return nil, fmt.Errorf("未知的DNS记录类型: %T", ns)
+			}
+
+			dnsMsg, err := r.tcpQuery(dnsHost, r.serverAddrs[0], true)
+
+			if err != nil {
+				return nil, err
+			}
+			ips := r.extractIPs(dnsMsg, dns.TypeA)
+			result, err := r.tcpQuery(host, ips[0].String()+":53", true)
+			if err != nil {
+				return nil, err
+			}
+			return result, nil
+
+		}
+		return newMsg, nil
+	}
 
 	for i, conn := range r.connections {
 		go func(idx int, connection *UDPConnection) {
@@ -194,8 +373,9 @@ func (r *UDPResolver) concurrentExchange(ctx context.Context, m *dns.Msg) (*dns.
 				bytes:      bytes,
 				err:        nil,
 				handle: func(resp *DNSInfo) {
-					newMsg := new(dns.Msg)
-					if err := newMsg.Unpack(resp.bytes); err != nil {
+					newMsg, err := handleDNSBytes(resp.bytes, false)
+					if err != nil {
+						errChan <- err
 						return
 					}
 					respChan <- newMsg
@@ -204,16 +384,48 @@ func (r *UDPResolver) concurrentExchange(ctx context.Context, m *dns.Msg) (*dns.
 			connection.sendChan <- info
 
 		}(i, conn)
+
+		// go func(dnsAddr string) {
+		// 	queryByts, _ := m.Pack()
+		// 	resp, err := handleTCPDNS(r.socks5Addr, dnsAddr, queryByts)
+		// 	if err != nil {
+		// 		return
+		// 	}
+		// 	newMsg := handleDNSBytes(resp, true)
+		// 	if newMsg == nil {
+		// 		return
+		// 	}
+		// 	respChan <- newMsg
+		// }(conn.remoteAddr)
+	}
+	errCount := 0
+	lastHandle := func() *dns.Msg {
+		result, _ := r.tcpQuery(m.Question[0].Name, r.serverAddrs[0], false)
+		return result
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			result := lastHandle()
+			if result != nil {
+				return result, nil
+			}
+			return nil, fmt.Errorf("所有服务器查询超时: %v", ctx.Err())
+		case err := <-errChan:
+			errCount++
+			if errCount == len(r.connections) {
+				result := lastHandle()
+				if result != nil {
+					return result, nil
+				}
+				return nil, fmt.Errorf("所有服务器查询失败: %v", err)
+			}
+		case resp := <-respChan:
+
+			return resp, nil
+		}
 	}
 
-	select {
-	case <-ctx.Done():
-		return nil, fmt.Errorf("所有服务器查询超时: %v", ctx.Err())
-
-	case resp := <-respChan:
-
-		return resp, nil
-	}
 }
 
 func (r *UDPResolver) extractIPs(resp *dns.Msg, qtype uint16) []net.IP {
