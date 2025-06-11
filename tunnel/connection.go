@@ -17,6 +17,19 @@ func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, metadata *C.Metadata
 		return errors.New("udp addr invalid")
 	}
 	bytes := packet.Data()
+	// if strings.Contains(addr.String(), "53") {
+	// 	msg := new(dns.Msg)
+	// 	if err := msg.Unpack(bytes); err != nil {
+	// 		log.Debugln("[DNS UDP] query error %v : %s", msg.Question, err)
+
+	// 	} else {
+	// 		if strings.Contains(msg.Question[0].Name, "bilivideo.com") {
+	// 			_ = msg
+	// 			bytes, _ = msg.Pack()
+	// 		}
+	// 	}
+
+	// }
 
 	if _, err := pc.WriteTo(bytes, addr); err != nil {
 		return err

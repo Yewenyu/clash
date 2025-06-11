@@ -3,6 +3,7 @@ package log
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/Dreamacro/clash/common/observable"
 
@@ -76,11 +77,14 @@ func SetLevel(newLevel LogLevel) {
 
 var maxLogCount = 0
 var currentLogCount = 0
+var lock sync.Mutex
 
 func print(data Event) {
 	if data.LogLevel < level {
 		return
 	}
+	lock.Lock()
+	defer lock.Unlock()
 	currentLogCount += 1
 
 	if maxLogCount > 0 && currentLogCount > maxLogCount {
@@ -108,8 +112,10 @@ func newLog(logLevel LogLevel, format string, v ...any) Event {
 	}
 }
 
-func CustomLogPath(logPath string, level int, maxCount int) {
+func CustomLogPath(logPath string, lev int, maxCount int) {
 
+	lock.Lock()
+	defer lock.Unlock()
 	maxLogCount = maxCount
 	var logFilePath = logPath
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
@@ -122,7 +128,7 @@ func CustomLogPath(logPath string, level int, maxCount int) {
 		return
 	}
 	// defer logFile.Close()
-
+	level = LogLevel(lev)
 	log.SetOutput(logFile)
 	log.SetLevel(log.Level(level))
 }

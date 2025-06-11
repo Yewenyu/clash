@@ -466,6 +466,14 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 				log.Debugln("[Matcher] %s UDP is not supported, skip match", adapter.Name())
 				continue
 			}
+
+			if metadata.Host != "" && rule.Adapter() == "DIRECT" {
+				ip, _ := resolver.ResolveIPDirect(metadata.Host)
+				if ip != nil {
+					metadata.DstIP = ip
+					log.Debugln("[DNS] change direct %s --> %s", metadata.Host, ip.String())
+				}
+			}
 			return adapter, rule, nil
 		}
 	}

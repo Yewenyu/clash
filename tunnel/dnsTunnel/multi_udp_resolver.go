@@ -321,6 +321,24 @@ func (r *UDPResolver) tcpQuery(host, dnsAddr string, useProxy bool) (*dns.Msg, e
 	}
 	return msg, nil
 }
+func (r *UDPResolver) dohQuery(host, dnsAddr string, useProxy bool) (*dns.Msg, error) {
+	query := new(dns.Msg)
+	query.SetQuestion(host, dns.TypeA)
+	queryBytes, _ := query.Pack()
+	socksAddr := ""
+	if useProxy {
+		socksAddr = r.socks5Addr
+	}
+	bytes, err := doDNSQuery(socksAddr, dnsAddr, queryBytes)
+	if err != nil {
+		return nil, err
+	}
+	msg := new(dns.Msg)
+	if err := msg.Unpack(bytes); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
 
 func (r *UDPResolver) query(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
 	respChan := make(chan *dns.Msg, len(r.connections))
@@ -328,7 +346,7 @@ func (r *UDPResolver) query(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
-	handleDNSBytes := func(bytes []byte, isTCPResult bool) (*dns.Msg, error) {
+	handleDNSBytes := func(bytes []byte, dnsAddr string) (*dns.Msg, error) {
 		newMsg := new(dns.Msg)
 		if err := newMsg.Unpack(bytes); err != nil {
 			return nil, err
@@ -336,29 +354,14 @@ func (r *UDPResolver) query(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
 
 		if len(newMsg.Answer) == 0 && len(newMsg.Ns) > 0 {
 			host := newMsg.Ns[0].Header().Name
-
-			ns := newMsg.Ns[0]
-			//判断ns是否是*dns.SOA或*dns.Ns类型，使用switch判断
-			dnsHost := ""
-			switch ns := ns.(type) {
-			case *dns.SOA:
-				dnsHost = ns.Ns
-			case *dns.NS:
-				dnsHost = ns.Ns
-			default:
-				return nil, fmt.Errorf("未知的DNS记录类型: %T", ns)
-			}
-
-			dnsMsg, err := r.tcpQuery(dnsHost, r.serverAddrs[0], true)
-
+			result, err := r.tcpQuery(host, dnsAddr, true)
 			if err != nil {
 				return nil, err
 			}
-			ips := r.extractIPs(dnsMsg, dns.TypeA)
-			result, err := r.tcpQuery(host, ips[0].String()+":53", true)
-			if err != nil {
-				return nil, err
+			if len(result.Answer) == 0 {
+				return nil, fmt.Errorf("tcp查询失败: %v", err)
 			}
+
 			return result, nil
 
 		}
@@ -368,12 +371,13 @@ func (r *UDPResolver) query(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
 	for i, conn := range r.connections {
 		go func(idx int, connection *UDPConnection) {
 			bytes, _ := m.Pack()
+			dnsAddr := r.serverAddrs[idx]
 			info := &DNSInfo{
-				remoteAddr: r.serverAddrs[idx],
+				remoteAddr: dnsAddr,
 				bytes:      bytes,
 				err:        nil,
 				handle: func(resp *DNSInfo) {
-					newMsg, err := handleDNSBytes(resp.bytes, false)
+					newMsg, err := handleDNSBytes(resp.bytes, dnsAddr)
 					if err != nil {
 						errChan <- err
 						return

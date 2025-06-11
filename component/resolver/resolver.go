@@ -65,6 +65,9 @@ func LookupIPv4(ctx context.Context, host string) ([]net.IP, error) {
 		return DefaultResolver.LookupIPv4(ctx, host)
 	}
 
+	return LookupIpV4Direct(host)
+}
+func LookupIpV4Direct(host string) ([]net.IP, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultDNSTimeout)
 	defer cancel()
 	ipAddrs, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
@@ -173,6 +176,15 @@ func LookupIP(ctx context.Context, host string) ([]net.IP, error) {
 // ResolveIP with a host, return ip
 func ResolveIP(host string) (net.IP, error) {
 	ips, err := LookupIP(context.Background(), host)
+	if err != nil {
+		return nil, err
+	} else if len(ips) == 0 {
+		return nil, fmt.Errorf("%w: %s", ErrIPNotFound, host)
+	}
+	return ips[rand.Intn(len(ips))], nil
+}
+func ResolveIPDirect(host string) (net.IP, error) {
+	ips, err := LookupIpV4Direct(host)
 	if err != nil {
 		return nil, err
 	} else if len(ips) == 0 {
