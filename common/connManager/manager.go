@@ -83,6 +83,6 @@ func Handle(hchan chan *HConn, once *sync.Once, MaxConnectCount, FreeConnectCoun
 }
 
 var (
-	MixedMaxCount = 60
-	TCPMaxCount   = 40
+	MixedMaxCount = 10
+	TCPMaxCount   = 60
 )

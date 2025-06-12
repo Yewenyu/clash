@@ -70,10 +70,10 @@ func main() {
 	C.SetHomeDir(currentPath)
 	// clash.SetBufferSize(1024, 1024*5)
 	// clash.SetGCPrecent(20)
-	clash.SetMixMaxCount(100, 70, 5)
+	// clash.SetMixMaxCount(100, 70, 5)
 	clash.SetBufferSize(1024, 1024*10)
 	clash.DNSCachTime(300)
-	go dnstunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", "udp", false, []string{"208.67.222.222", "8.8.8.8"}, []string{})
+	// go dnstunnel.ListenDNS("0.0.0.0:853", "127.0.0.1:7779", "udp", false, []string{"208.67.222.222", "8.8.8.8"}, []string{})
 	go dnstunnel.SetupHttpDNSResolver("127.0.0.1:7779", []string{"1.1.1.1:53", "8.8.8.8:53", "114.114.114.114:53"}, 10)
 	go listenConfig()
 	// go tool pprof -http=:8081 http://localhost:6060/debug/pprof/goroutine

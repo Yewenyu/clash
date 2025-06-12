@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Dreamacro/clash/log"
+	connmanager "github.com/Dreamacro/clash/common/connManager"
 	gl "github.com/Yewenyu/GoLimiter"
 )
 
@@ -17,7 +17,8 @@ var (
 	HttpTimeout = 5
 	DNSTimeout  = 5
 
-	queuePool = NewQueuePool(60)
+	queuePool *QueuePool
+	lock      sync.Mutex
 )
 
 // Relay copies between left and right bidirectionally.
@@ -45,6 +46,11 @@ var pool = sync.Pool{
 }
 
 func Relay(leftConn, rightConn net.Conn, useHttpTimeout bool, useDNSTimeout bool) {
+	lock.Lock()
+	if queuePool == nil {
+		queuePool = NewQueuePool(connmanager.TCPMaxCount)
+	}
+	lock.Unlock()
 	queuePool.addConns(&ConnsInfo{
 		leftConn:       leftConn,
 		rightConn:      rightConn,
@@ -214,13 +220,15 @@ func (p *RunPool) stopConns(count, timeout int) {
 		stopCons = conns[:count]
 	}
 	for _, connsInfo := range stopCons {
+		if connsInfo.useDNSTimeout {
+			continue
+		}
 		if timeout > 0 {
 			connsInfo.leftConn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 			connsInfo.rightConn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 		} else {
-			connsInfo.leftConn.Close()
-			connsInfo.rightConn.Close()
-			delete(p.connsInfos, connsInfo.key)
+			connsInfo.leftConn.SetReadDeadline(time.Now().Add(time.Duration(1) * time.Second))
+			connsInfo.rightConn.SetReadDeadline(time.Now().Add(time.Duration(1) * time.Second))
 		}
 	}
 	p.lock.Unlock()
@@ -269,8 +277,6 @@ func (p *RunPool) relay(connInfo *ConnsInfo) {
 			r.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 			n, err := r.Read(b)
 			if err != nil {
-
-				log.Debugln("Relay error: %v", err)
 				break loop
 			}
 			_, err = w.Write(b[:n])

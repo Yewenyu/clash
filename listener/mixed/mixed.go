@@ -5,14 +5,12 @@ import (
 	"sync"
 
 	"github.com/Dreamacro/clash/common/cache"
-	connmanager "github.com/Dreamacro/clash/common/connManager"
 	N "github.com/Dreamacro/clash/common/net"
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/listener/http"
 	"github.com/Dreamacro/clash/listener/socks"
 	"github.com/Dreamacro/clash/transport/socks4"
 	"github.com/Dreamacro/clash/transport/socks5"
-	gl "github.com/Yewenyu/GoLimiter"
 )
 
 type Listener struct {
@@ -57,11 +55,7 @@ func New(addr string, in chan<- C.ConnContext) (C.Listener, error) {
 		addr:     addr,
 		cache:    newCache(),
 	}
-	if goLimiter == nil {
-		goLimiter = gl.NewGoroutinePool(connmanager.MixedMaxCount, func(mht mixHandleType) {
-			handleConn1(mht.conn, mht.in, mht.cache)
-		})
-	}
+
 	go func() {
 		for {
 			c, err := ml.listener.Accept()
@@ -84,13 +78,13 @@ type mixHandleType struct {
 	cache *cache.LruCache
 }
 
-var goLimiter *gl.GoroutinePool[mixHandleType]
 var limLock sync.Mutex
 
 func handleConn(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
-	limLock.Lock()
-	defer limLock.Unlock()
-	goLimiter.SubmitTask(mixHandleType{conn: conn, in: in, cache: cache})
+	// limLock.Lock()
+	// defer limLock.Unlock()
+	// goLimiter.SubmitTask(mixHandleType{conn: conn, in: in, cache: cache})
+	go handleConn1(conn, in, cache)
 }
 func handleConn1(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
 	conn.(*net.TCPConn).SetKeepAlive(true)

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/Dreamacro/clash/adapter/inbound"
-	connmanager "github.com/Dreamacro/clash/common/connManager"
 	"github.com/Dreamacro/clash/component/nat"
 	P "github.com/Dreamacro/clash/component/process"
 	"github.com/Dreamacro/clash/component/resolver"
@@ -21,7 +20,6 @@ import (
 	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
 	"github.com/Dreamacro/clash/tunnel/statistic"
 
-	gl "github.com/Yewenyu/GoLimiter"
 	"go.uber.org/atomic"
 )
 
@@ -136,7 +134,6 @@ func process() {
 
 	queue := tcpQueue
 	for conn := range queue {
-		goLimiter.SetCapacity(connmanager.TCPMaxCount)
 		handleTCPConn(conn)
 	}
 }
@@ -326,38 +323,33 @@ func handleUDPConn(packet *inbound.PacketAdapter) {
 	}()
 }
 
-var goLimiter = gl.NewGoroutinePool(connmanager.TCPMaxCount, func(ctx C.ConnContext) {
-
-	handleTCPConn1(ctx)
-})
-
 func handleTCPConn(connCtx C.ConnContext) {
-	goLimiter.SubmitTask(connCtx)
+	go handleTCPConn1(connCtx)
 }
 
 func handleTCPConn1(connCtx C.ConnContext) {
-	defer connCtx.Conn().Close()
 
 	metadata := connCtx.Metadata()
 	if !metadata.Valid() {
 		log.Warnln("[Metadata] not valid: %#v", metadata)
+		connCtx.Conn().Close()
 		return
 	}
 
 	if err := preHandleMetadata(metadata); err != nil {
 		log.Debugln("[Metadata PreHandle] error: %s", err)
+		connCtx.Conn().Close()
 		return
 	}
 
 	proxy, rule, err := resolveMetadata(connCtx, metadata)
 	if err != nil {
 		log.Warnln("[Metadata] parse failed: %s", err.Error())
+		connCtx.Conn().Close()
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), C.DefaultTCPTimeout)
-	defer cancel()
-	remoteConn, err := proxy.DialContext(ctx, metadata.Pure())
+	remoteConn, err := proxy.DialContext(context.Background(), metadata.Pure())
 	if err != nil {
 		if rule == nil {
 			log.Warnln(
@@ -370,10 +362,10 @@ func handleTCPConn1(connCtx C.ConnContext) {
 		} else {
 			log.Warnln("[TCP] dial %s (match %s/%s) %s --> %s error: %s", proxy.Name(), rule.RuleType().String(), rule.Payload(), metadata.SourceAddress(), metadata.RemoteAddress(), err.Error())
 		}
+		connCtx.Conn().Close()
 		return
 	}
 	remoteConn = statistic.NewTCPTracker(remoteConn, statistic.DefaultManager, metadata, rule)
-	defer remoteConn.Close()
 
 	switch true {
 	case metadata.SpecialProxy != "":
