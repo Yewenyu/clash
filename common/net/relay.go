@@ -116,6 +116,7 @@ type ConnsInfo struct {
 	key                           string
 	activeTime                    time.Time
 	lock                          sync.Mutex
+	timeout                       int
 }
 
 type RunPool struct {
@@ -133,6 +134,7 @@ type QueuePool struct {
 	connChan       chan *ConnsInfo
 	connLevel1Chan chan *ConnsInfo
 	connLevel2Chan chan *ConnsInfo
+	connLevel3Chan chan *ConnsInfo
 }
 
 func NewQueuePool(maxConnCount int) *QueuePool {
@@ -150,6 +152,7 @@ func NewQueuePool(maxConnCount int) *QueuePool {
 		connChan:       make(chan *ConnsInfo, limitCount),
 		connLevel1Chan: make(chan *ConnsInfo, limitCount),
 		connLevel2Chan: make(chan *ConnsInfo, limitCount),
+		connLevel3Chan: make(chan *ConnsInfo, limitCount),
 		runPool:        runPool,
 	}
 	return queuePool
@@ -159,8 +162,11 @@ func NewQueuePool(maxConnCount int) *QueuePool {
 func (p *QueuePool) addConns(connsInfo *ConnsInfo) {
 	chanLevel := 0
 	p.lock.Lock()
-	if p.currentCount > p.maxConnCount/3*2 {
+	if p.currentCount > p.maxConnCount {
 		p.stopRunPoolConn(p.runPool.maxConnCount, 0)
+		chanLevel = 3
+	} else if p.currentCount > p.maxConnCount/3*2 {
+		p.stopRunPoolConn(p.runPool.maxConnCount, 1)
 		chanLevel = 2
 	} else if p.currentCount > p.maxConnCount/3*1 {
 		p.stopRunPoolConn(p.runPool.maxConnCount/3, 2)
@@ -174,6 +180,8 @@ func (p *QueuePool) addConns(connsInfo *ConnsInfo) {
 		p.connLevel1Chan <- connsInfo
 	case 2:
 		p.connLevel2Chan <- connsInfo
+	case 3:
+		p.connLevel3Chan <- connsInfo
 	default:
 		p.connChan <- connsInfo
 	}
@@ -184,11 +192,16 @@ func (p *QueuePool) addConns(connsInfo *ConnsInfo) {
 
 				var connsInfo *ConnsInfo
 				select {
+				case connsInfo = <-p.connLevel3Chan:
 				case connsInfo = <-p.connLevel2Chan:
 				case connsInfo = <-p.connLevel1Chan:
 				case connsInfo = <-p.connChan:
 				}
-				p.runPool.limit.SubmitTask(connsInfo)
+				if connsInfo.useDNSTimeout {
+					go p.runPool.relay(connsInfo)
+				} else {
+					p.runPool.limit.SubmitTask(connsInfo)
+				}
 				p.lock.Lock()
 				p.currentCount--
 				p.lock.Unlock()
@@ -205,7 +218,12 @@ func (p *QueuePool) stopRunPoolConn(count, timeout int) {
 
 func (p *RunPool) stopConns(count, timeout int) {
 	p.lock.Lock()
+	defer p.lock.Unlock()
 	//停止活跃度低的连接
+
+	if len(p.connsInfos) < count {
+		return
+	}
 
 	stopCons := []*ConnsInfo{}
 	for _, connsInfo := range p.connsInfos {
@@ -223,15 +241,17 @@ func (p *RunPool) stopConns(count, timeout int) {
 		if connsInfo.useDNSTimeout {
 			continue
 		}
-		if timeout > 0 {
-			connsInfo.leftConn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
-			connsInfo.rightConn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
-		} else {
-			connsInfo.leftConn.SetReadDeadline(time.Now().Add(time.Duration(1) * time.Second))
-			connsInfo.rightConn.SetReadDeadline(time.Now().Add(time.Duration(1) * time.Second))
+		delete(p.connsInfos, connsInfo.key)
+		connsInfo.lock.Lock()
+		defer connsInfo.lock.Unlock()
+		if connsInfo.leftConn == nil || connsInfo.rightConn == nil {
+			continue
 		}
+
+		connsInfo.timeout = timeout
+		connsInfo.leftConn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		connsInfo.rightConn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 	}
-	p.lock.Unlock()
 
 }
 func (p *RunPool) handle(connInfo *ConnsInfo) {
@@ -262,15 +282,16 @@ func (p *RunPool) relay(connInfo *ConnsInfo) {
 	if useDNSTimeout {
 		timeout = DNSTimeout
 	}
-
+	connInfo.timeout = timeout
 	handle := func(w, r net.Conn) {
-		b := pool.Get().([]byte)
+		b := make([]byte, TCPBufferSize)
 		defer pool.Put(b)
 		defer w.Close()
 	loop:
 		for {
 			connInfo.lock.Lock()
 			connInfo.activeTime = time.Now()
+			timeout = connInfo.timeout
 			connInfo.lock.Unlock()
 			// 更新连接时间
 
@@ -289,4 +310,9 @@ func (p *RunPool) relay(connInfo *ConnsInfo) {
 	go handle(rightConn, leftConn)
 	handle(leftConn, rightConn)
 	rightConn.SetReadDeadline(time.Now())
+	connInfo.lock.Lock()
+	connInfo.rightConn = nil
+	connInfo.leftConn = nil
+	connInfo.lock.Unlock()
+
 }

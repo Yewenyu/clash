@@ -40,6 +40,8 @@ var (
 
 	// experimental feature
 	UDPFallbackMatch = atomic.NewBool(false)
+
+	udpCancelFunc context.CancelFunc
 )
 
 func init() {
@@ -114,11 +116,24 @@ func SetMode(m TunnelMode) {
 // processUDP starts a loop to handle udp packet
 func ProcessUDP(num int) {
 
+	if num <= 0 {
+		return
+	}
+	if udpCancelFunc != nil {
+		udpCancelFunc()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	udpCancelFunc = cancel
 	for i := 0; i < num; i++ {
 		go func() {
 			queue := udpQueue
-			for conn := range queue {
-				handleUDPConn(conn)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case conn := <-queue:
+					handleUDPConn(conn)
+				}
 			}
 		}()
 	}
