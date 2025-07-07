@@ -8,6 +8,7 @@ import (
 	"time"
 
 	connmanager "github.com/Dreamacro/clash/common/connManager"
+	"github.com/Dreamacro/clash/common/pool"
 	gl "github.com/Yewenyu/GoLimiter"
 )
 
@@ -39,11 +40,6 @@ func Relay1(leftConn, rightConn net.Conn) {
 }
 
 var TCPBufferSize = 0
-var pool = sync.Pool{
-	New: func() any {
-		return make([]byte, TCPBufferSize)
-	},
-}
 
 func Relay(leftConn, rightConn net.Conn, useHttpTimeout bool, useDNSTimeout bool) {
 	lock.Lock()
@@ -77,8 +73,7 @@ func Relay2(leftConn, rightConn net.Conn, useHttpTimeout bool, useDNSTimeout boo
 	timeLock := time.NewTimer(time.Duration(timeout) * time.Second)
 
 	handle := func(w, r net.Conn) {
-		b := pool.Get().([]byte)
-		defer pool.Put(b)
+		b := make([]byte, TCPBufferSize)
 		defer w.Close()
 	loop:
 		for {
@@ -284,7 +279,7 @@ func (p *RunPool) relay(connInfo *ConnsInfo) {
 	}
 	connInfo.timeout = timeout
 	handle := func(w, r net.Conn) {
-		b := make([]byte, TCPBufferSize)
+		b := pool.Get(TCPBufferSize)
 		defer pool.Put(b)
 		defer w.Close()
 	loop:

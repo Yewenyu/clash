@@ -61,7 +61,7 @@ type PacketConn struct {
 	Cipher
 }
 
-const maxPacketSize = 64 * 1024
+var MaxPacketSize = 8 * 1024
 
 // NewPacketConn wraps a net.PacketConn with cipher
 func NewPacketConn(c net.PacketConn, ciph Cipher) *PacketConn {
@@ -70,7 +70,7 @@ func NewPacketConn(c net.PacketConn, ciph Cipher) *PacketConn {
 
 // WriteTo encrypts b and write to addr using the embedded PacketConn.
 func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
-	buf := pool.Get(maxPacketSize)
+	buf := pool.Get(MaxPacketSize)
 	defer pool.Put(buf)
 	buf, err := Pack(buf, b, c)
 	if err != nil {
