@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,7 +38,7 @@ var (
 
 	// default timeout for UDP session
 	udpTimeout = 60 * time.Second
-
+	DNSRelay   = true
 	// experimental feature
 	UDPFallbackMatch = atomic.NewBool(false)
 
@@ -186,6 +187,12 @@ func preHandleMetadata(metadata *C.Metadata) error {
 }
 
 func resolveMetadata(ctx C.PlainContext, metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err error) {
+
+	var mode = mode
+	if metadata.UDPAddr() != nil && DNSRelay && !strings.Contains(metadata.UDPAddr().String(), "53") {
+		mode = Direct
+	}
+
 	if metadata.SpecialProxy != "" {
 		var exist bool
 		proxy, exist = proxies[metadata.SpecialProxy]
@@ -279,6 +286,7 @@ func handleUDPConn(packet *inbound.PacketAdapter) {
 		}()
 
 		pCtx := icontext.NewPacketConnContext(metadata)
+
 		proxy, rule, err := resolveMetadata(pCtx, metadata)
 		if err != nil {
 			log.Warnln("[UDP] Parse metadata failed: %s", err.Error())
@@ -419,7 +427,10 @@ func handleTCPConn1(connCtx C.ConnContext) {
 }
 
 func shouldResolveIP(rule C.Rule, metadata *C.Metadata) bool {
-	return rule.ShouldResolveIP() && metadata.Host != "" && metadata.DstIP == nil
+	return rule.ShouldResolveIP() && shouldResolveIPM(metadata)
+}
+func shouldResolveIPM(metadata *C.Metadata) bool {
+	return metadata.Host != "" && metadata.DstIP == nil
 }
 
 func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
@@ -429,60 +440,82 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 	var resolved bool
 	var processFound bool
 
+	if metadata.Host != "" {
+		dnstunnel.Out_tRule.SetHttpEnable(true)
+	}
+
 	if node := resolver.DefaultHosts.Search(metadata.Host); node != nil {
 		ip := node.Data.(net.IP)
 		metadata.DstIP = ip
 		resolved = true
 	}
-
-	for _, rule := range dnstunnel.Out_tRule.GetRule() {
-		if !resolved && shouldResolveIP(rule, metadata) {
-			ip, err := resolver.ResolveIP(metadata.Host)
-			if err != nil {
-				log.Debugln("[DNS] resolve %s error: %s", metadata.Host, err.Error())
-			} else {
-				log.Debugln("[DNS] %s --> %s", metadata.Host, ip.String())
-				metadata.DstIP = ip
-			}
-			resolved = true
+	if !resolved && shouldResolveIPM(metadata) {
+		ip, err := resolver.ResolveIP(metadata.Host)
+		if err != nil {
+			log.Debugln("[DNS] resolve %s error: %s", metadata.Host, err.Error())
+		} else {
+			log.Debugln("[DNS] %s --> %s", metadata.Host, ip.String())
+			metadata.DstIP = ip
 		}
+		resolved = true
+	}
 
-		if !processFound && rule.ShouldFindProcess() {
-			processFound = true
+	var adapter C.Proxy
+	var isDirect bool = false
+	var r C.Rule
+	if dnstunnel.UseFileRule {
+		r = dnstunnel.FileR.Match(metadata)
+		if r != nil {
+			isDirect = r.Adapter() == "DIRECT"
+			adapter = proxies[r.Adapter()]
+		}
+	}
+	if adapter == nil {
+		for _, rule := range dnstunnel.Out_tRule.GetRule() {
 
-			srcIP, ok := netip.AddrFromSlice(metadata.SrcIP)
-			if ok && metadata.OriginDst.IsValid() {
-				srcIP = srcIP.Unmap()
-				path, err := P.FindProcessPath(metadata.NetWork.String(), netip.AddrPortFrom(srcIP, uint16(metadata.SrcPort)), metadata.OriginDst)
-				if err != nil {
-					log.Debugln("[Process] find process %s: %v", metadata.String(), err)
-				} else {
-					log.Debugln("[Process] %s from process %s", metadata.String(), path)
-					metadata.ProcessPath = path
+			if !processFound && rule.ShouldFindProcess() {
+				processFound = true
+
+				srcIP, ok := netip.AddrFromSlice(metadata.SrcIP)
+				if ok && metadata.OriginDst.IsValid() {
+					srcIP = srcIP.Unmap()
+					path, err := P.FindProcessPath(metadata.NetWork.String(), netip.AddrPortFrom(srcIP, uint16(metadata.SrcPort)), metadata.OriginDst)
+					if err != nil {
+						log.Debugln("[Process] find process %s: %v", metadata.String(), err)
+					} else {
+						log.Debugln("[Process] %s from process %s", metadata.String(), path)
+						metadata.ProcessPath = path
+					}
 				}
 			}
-		}
 
-		if rule.Match(metadata) {
-			adapter, ok := proxies[rule.Adapter()]
-			if !ok {
-				continue
-			}
-
-			if metadata.NetWork == C.UDP && !adapter.SupportUDP() && UDPFallbackMatch.Load() {
-				log.Debugln("[Matcher] %s UDP is not supported, skip match", adapter.Name())
-				continue
-			}
-
-			if metadata.Host != "" && rule.Adapter() == "DIRECT" {
-				ip, _ := resolver.ResolveIPDirect(metadata.Host)
-				if ip != nil {
-					metadata.DstIP = ip
-					log.Debugln("[DNS] change direct %s --> %s", metadata.Host, ip.String())
+			if rule.Match(metadata) {
+				ada, ok := proxies[rule.Adapter()]
+				if !ok {
+					continue
 				}
+
+				if metadata.NetWork == C.UDP && !ada.SupportUDP() && UDPFallbackMatch.Load() {
+					log.Debugln("[Matcher] %s UDP is not supported, skip match", ada.Name())
+					continue
+				}
+				isDirect = rule.Adapter() == "DIRECT"
+				adapter = ada
+				r = rule
+				break
+
 			}
-			return adapter, rule, nil
 		}
+	}
+	if adapter != nil && isDirect && metadata.Host != "" {
+		ip, _ := resolver.ResolveIPDirect(metadata.Host)
+		if ip != nil {
+			metadata.DstIP = ip
+			log.Debugln("[DNS] change direct %s --> %s", metadata.Host, ip.String())
+		}
+	}
+	if adapter != nil {
+		return adapter, r, nil
 	}
 
 	return proxies["DIRECT"], nil, nil

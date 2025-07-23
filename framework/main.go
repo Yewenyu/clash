@@ -22,6 +22,7 @@ import (
 	"github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/hub/executor"
 	"github.com/Dreamacro/clash/log"
+	"github.com/Dreamacro/clash/tunnel"
 	t "github.com/Dreamacro/clash/tunnel"
 	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
 	"github.com/Dreamacro/clash/tunnel/statistic"
@@ -71,7 +72,7 @@ func SetupHomeDir(homeDirPath string) {
 var cfgPath = ""
 var externalControllerAddr = ""
 
-func RunByConfig(configString string, externalController string) error {
+func RunByConfig(configString string, externalController string, dnsRelay bool, diskRuleCache bool) error {
 	log.Infoln("start run")
 	// cfgPath = configPath
 	externalControllerAddr = externalController
@@ -93,6 +94,8 @@ func RunByConfig(configString string, externalController string) error {
 		log.Infoln("config.parse raw config failed by error: %s", err.Error())
 		return err
 	}
+	tunnel.DNSRelay = dnsRelay
+	dnstunnel.UseFileRule = diskRuleCache
 	// go route.Start(externalController, "")
 	executor.ApplyConfig(cfg, true)
 	log.Infoln("apply config success")

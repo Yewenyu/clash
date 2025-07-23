@@ -4,11 +4,13 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"strings"
 	"time"
 
 	N "github.com/Dreamacro/clash/common/net"
 	"github.com/Dreamacro/clash/common/pool"
 	C "github.com/Dreamacro/clash/constant"
+	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
 )
 
 func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, metadata *C.Metadata) error {
@@ -60,6 +62,11 @@ func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, 
 			if oAddr == fromAddr {
 				fromUDPAddr.IP = fAddr.AsSlice()
 			}
+		}
+		if strings.Contains(from.String(), "53") && !dnstunnel.Out_tRule.IsHttpEnable {
+			bytes := buf[:n]
+			dnstunnel.Out_tRule.HandleDnsWithChan(bytes)
+
 		}
 
 		_, err = packet.WriteBack(buf[:n], &fromUDPAddr)

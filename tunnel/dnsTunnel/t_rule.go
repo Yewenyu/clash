@@ -3,6 +3,7 @@ package dnstunnel
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	"github.com/miekg/dns"
 )
 
+var UseFileRule = true
+var FileR *FileRule
 var Out_tRule *TRule = CreateTRule(make([]C.Rule, 0))
 
 type TRule struct {
@@ -23,20 +26,34 @@ type TRule struct {
 	machIpMap     map[string]int
 	l             sync.RWMutex
 	handleDnsChan chan []byte
+	IsHttpEnable  bool
 }
 
 func CreateTRule(rules []C.Rule) *TRule {
+
+	if UseFileRule && len(rules) > 0 {
+		FileR = CreateFileRule()
+		rules = FileR.writeRules(rules)
+	}
 
 	rule := &TRule{
 		Rules:     rules,
 		machIpMap: make(map[string]int),
 	}
-	go rule.getIpRuleFromDomain()
+	// go rule.getIpRuleFromDomain()
 	return rule
+}
+
+func (r *TRule) SetHttpEnable(b bool) {
+	r.l.Lock()
+	r.IsHttpEnable = b
+	r.l.Unlock()
 }
 
 func (r *TRule) GetRule() []C.Rule {
 	rs := r.Rules
+	ss := rs[0].Payload()
+	_ = ss
 	return rs
 }
 func (r *TRule) MatchCRule(meta *C.Metadata) (int, C.Rule) {
@@ -184,12 +201,19 @@ func (r *TRule) HandleDns(bytes []byte) error {
 		qName = trimLastDot(q.Name)
 		break
 	}
-
 	cM := C.Metadata{Host: qName}
-	_, ok, rule := r.Match(&cM)
-	if !ok {
-		return fmt.Errorf("dns not match rule")
+	var rule C.Rule
+	if UseFileRule {
+		rule = FileR.Match(&cM)
 	}
+	if rule == nil {
+		_, ok, rl := r.Match(&cM)
+		if !ok {
+			return fmt.Errorf("dns not match rule")
+		}
+		rule = rl
+	}
+
 	if rule.Payload() == "" {
 		return nil
 	}
@@ -321,4 +345,194 @@ func buildDNSResponseFromCache(req *dns.Msg, cache *dns.Msg) *dns.Msg {
 
 func fileName(dns *dns.Msg) string {
 	return fmt.Sprintf("%s_%d", dns.Question[0].Name, dns.Question[0].Qtype)
+}
+
+type FileRule struct {
+	matchMap map[string]C.Rule
+	lock     sync.RWMutex
+}
+
+func getRulePath() string {
+	return C.Path.HomeDir() + "/dnsRule"
+}
+
+func CreateFileRule() *FileRule {
+	return &FileRule{
+		matchMap: make(map[string]C.Rule),
+	}
+}
+func (r *FileRule) writeRules(rules []C.Rule) []C.Rule {
+	newRules := []C.Rule{}
+	//删除文件夹
+	rulePath := getRulePath()
+	if err := os.RemoveAll(rulePath); err != nil {
+		log.Errorln("[DNS Rule] file err : %v", err)
+	}
+	log.Debugln("[DNS Rule] write rules at path: %s", rulePath)
+	limit := make(chan int, 50)
+	for _, rule := range rules {
+		handleRule := func(rule C.Rule) {
+			p := strings.Join(strings.Split(rule.Payload(), "."), "/") + "/" + rule.Adapter()
+			var canWrite = false
+			if rule.RuleType() == C.DomainSuffix || rule.RuleType() == C.DomainKeyword || rule.RuleType() == C.Domain {
+				canWrite = true
+				arr := strings.Split(rule.Payload(), ".")
+				//翻转
+				for i, j := 0, len(arr)-1; i < j; i, j = i+1, j-1 {
+					arr[i], arr[j] = arr[j], arr[i]
+				}
+				p = strings.Join(arr, "/") + "/a_d_a_/" + rule.Adapter()
+			} else if rule.RuleType() == C.IPCIDR {
+				canWrite = true
+			} else {
+				newRules = append(newRules, rule)
+			}
+			if canWrite {
+				var path = rulePath + "/" + p
+				if err := writeFileEnsureDir(path, []byte("1")); err != nil {
+					log.Errorln("[DNS Rule] file err : %v", err)
+				}
+			}
+			<-limit
+		}
+		go handleRule(rule)
+		limit <- 1
+	}
+	return newRules
+}
+
+func (r *FileRule) getCacheRule(metadata *C.Metadata) C.Rule {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	var key = metadata.Host
+	if key == "" {
+		key = metadata.DstIP.String()
+	}
+	rule := r.matchMap[key]
+	if rule == nil && metadata.Host != "" && metadata.DstIP != nil {
+		rule = r.matchMap[metadata.DstIP.String()]
+	}
+	return rule
+}
+
+func (r *FileRule) Match(metadata *C.Metadata) C.Rule {
+	var rule C.Rule
+	rule = r.getCacheRule(metadata)
+	if rule != nil {
+		return rule
+	}
+	if metadata.Host == "" {
+		ip := metadata.DstIP.String()
+		rule = ipMach(ip)
+	} else {
+		rule = hostMath(metadata.Host)
+		if rule == nil && metadata.DstIP != nil {
+			rule = ipMach(metadata.DstIP.String())
+		}
+	}
+	if rule != nil && rule.Match(metadata) {
+		r.lock.Lock()
+		r.matchMap[metadata.Host] = rule
+		r.lock.Unlock()
+	} else {
+		rule = nil
+	}
+
+	return rule
+}
+func hostMath(host string) C.Rule {
+	arr := strings.Split(host, ".")
+	//翻转
+	for i, j := 0, len(arr)-1; i < j; i, j = i+1, j-1 {
+		arr[i], arr[j] = arr[j], arr[i]
+	}
+	rulePath := getRulePath()
+	last := rulePath
+	index := -1
+	for i, v := range arr {
+		path := last + "/" + v
+		if _, err := os.Stat(path); err != nil {
+			break
+		}
+		last = path
+		index = i
+	}
+	if index == -1 {
+		return nil
+	}
+	files, err := os.ReadDir(last + "/a_d_a_/")
+	if err != nil {
+		return nil
+	}
+	for _, file := range files {
+		r, err := R.ParseRule(string(C.RuleConfigDomain), host, file.Name(), nil)
+		if err == nil {
+			return r
+		}
+	}
+
+	return nil
+}
+func ipMach(ip string) C.Rule {
+	//根据ip生成路径查看是否存在相关文件路径
+	arr := strings.Split(ip, ".")
+	rulePath := getRulePath()
+	last := rulePath
+	index := -1
+	for i, v := range arr {
+		path := last + "/" + v
+		if _, err := os.Stat(path); err != nil {
+			break
+		}
+		last = path
+		index = i
+	}
+	if index == -1 {
+		return nil
+	}
+	if index < len(arr) {
+		for i := index + 1; i < len(arr); i++ {
+			path := last + "/0"
+			if _, err := os.Stat(path); err != nil {
+				break
+			}
+			last = path
+		}
+	}
+	//获取last路径里面所有文件路径
+	files, err := os.ReadDir(last)
+	if err != nil {
+		return nil
+	}
+	ipNetString := ""
+	var find = false
+	for _, file := range files {
+		subPath := strings.Replace(last, rulePath+"/", "", 1) + "/" + file.Name()
+		ipNetString = strings.Replace(subPath, "/", ".", 3)
+		ipNet, err := netip.ParsePrefix(ipNetString)
+		if err != nil {
+			continue
+		}
+		if ipNet.Contains(netip.MustParseAddr(ip)) {
+			last += "/" + file.Name()
+			find = true
+			break
+		}
+	}
+	if !find {
+		return nil
+	}
+	files, err = os.ReadDir(last)
+	if err != nil {
+		return nil
+	}
+	for _, file := range files {
+		r, err := R.ParseRule(string(C.RuleConfigIPCIDR), ipNetString, file.Name(), nil)
+		if err == nil {
+			return r
+		}
+
+	}
+
+	return nil
 }

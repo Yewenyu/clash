@@ -1,8 +1,8 @@
 module github.com/Dreamacro/clash
 
-go 1.21.4
+go 1.23.0
 
-toolchain go1.22.4
+toolchain go1.23.4
 
 require (
 	github.com/Dreamacro/protobytes v0.0.0-20230617041236-6500a9f4f158
@@ -25,10 +25,10 @@ require (
 	go.etcd.io/bbolt v1.3.7
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.5.3
-	golang.org/x/crypto v0.21.0
-	golang.org/x/net v0.23.0
-	golang.org/x/sync v0.3.0
-	golang.org/x/sys v0.18.0
+	golang.org/x/crypto v0.40.0
+	golang.org/x/net v0.42.0
+	golang.org/x/sync v0.16.0
+	golang.org/x/sys v0.34.0
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -50,6 +50,7 @@ require (
 	github.com/sina-ghaderi/rabaead v0.0.0-20220730151906-ab6e06b96e8c // indirect
 	github.com/sina-ghaderi/rabbitio v0.0.0-20220730151941-9ce26f4f872e // indirect
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
+	golang.org/x/mobile v0.0.0-20250711185624-d5bb5ecc55c0 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )
 
@@ -58,7 +59,7 @@ require (
 	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/google/go-cmp v0.5.9 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -76,9 +77,9 @@ require (
 	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
 	github.com/zhangyunhao116/fastrand v0.5.0
 	golang.org/x/exp v0.0.0-20220428152302-39d4317da171 // indirect
-	golang.org/x/mod v0.8.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/tools v0.6.0 // indirect
+	golang.org/x/mod v0.26.0 // indirect
+	golang.org/x/text v0.27.0 // indirect
+	golang.org/x/tools v0.35.0 // indirect
 )
 
 replace github.com/sagernet/sing => github.com/metacubex/sing v0.0.0-20240518125217-e63d65a914d1
