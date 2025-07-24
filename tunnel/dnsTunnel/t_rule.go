@@ -33,7 +33,7 @@ func CreateTRule(rules []C.Rule) *TRule {
 
 	if UseFileRule && len(rules) > 0 {
 		FileR = CreateFileRule()
-		rules = FileR.writeRules(rules)
+		rules = FileR.writeRules(rules, true)
 	}
 
 	rule := &TRule{
@@ -64,9 +64,16 @@ func (r *TRule) MatchCRule(meta *C.Metadata) (int, C.Rule) {
 	return -1, nil
 }
 
-func (r *TRule) Match(meta *C.Metadata) (int, bool, C.Rule) {
-	i, rule := r.MatchCRule(meta)
-	return i, i != -1, rule
+func (r *TRule) Match(meta *C.Metadata) C.Rule {
+	var rule C.Rule
+	if UseFileRule {
+		rule = FileR.Match(meta)
+	}
+	if rule == nil {
+		_, rule = r.MatchCRule(meta)
+	}
+
+	return rule
 }
 
 func (r *TRule) getIpRuleFromDomain() {
@@ -178,11 +185,17 @@ func (r *TRule) appendIpRule(ip string, domainRule C.Rule) {
 		return
 	}
 	r.l.Lock()
-	index := len(r.Rules) - 1
-	last := r.Rules[index]
-	r.Rules = append(r.Rules[:index], ipRule)
-	r.Rules = append(r.Rules, last)
-	r.machIpMap[ip] = index
+	if UseFileRule {
+		FileR.writeRules([]C.Rule{ipRule}, false)
+		r.machIpMap[ip] = -1
+	} else {
+		index := len(r.Rules) - 1
+		last := r.Rules[index]
+		r.Rules = append(r.Rules[:index], ipRule)
+		r.Rules = append(r.Rules, last)
+		r.machIpMap[ip] = index
+	}
+
 	r.l.Unlock()
 }
 func (r *TRule) HandleDns(bytes []byte) error {
@@ -200,19 +213,10 @@ func (r *TRule) HandleDns(bytes []byte) error {
 		break
 	}
 	cM := C.Metadata{Host: qName}
-	var rule C.Rule
-	if UseFileRule {
-		rule = FileR.Match(&cM)
-	}
-	if rule == nil {
-		_, ok, rl := r.Match(&cM)
-		if !ok {
-			return fmt.Errorf("dns not match rule")
-		}
-		rule = rl
-	}
 
-	if rule.Payload() == "" {
+	rule := r.Match(&cM)
+
+	if rule == nil || rule.Payload() == "" {
 		return nil
 	}
 
@@ -359,13 +363,16 @@ func CreateFileRule() *FileRule {
 		matchMap: make(map[string]C.Rule),
 	}
 }
-func (r *FileRule) writeRules(rules []C.Rule) []C.Rule {
+func (r *FileRule) writeRules(rules []C.Rule, clear bool) []C.Rule {
 	newRules := []C.Rule{}
 	//删除文件夹
 	rulePath := getRulePath()
-	if err := os.RemoveAll(rulePath); err != nil {
-		log.Errorln("[DNS Rule] file err : %v", err)
+	if clear {
+		if err := os.RemoveAll(rulePath); err != nil {
+			log.Errorln("[DNS Rule] file err : %v", err)
+		}
 	}
+	waitGroup := sync.WaitGroup{}
 	log.Debugln("[DNS Rule] write rules at path: %s", rulePath)
 	limit := make(chan int, 50)
 	for _, rule := range rules {
@@ -383,7 +390,9 @@ func (r *FileRule) writeRules(rules []C.Rule) []C.Rule {
 			} else if rule.RuleType() == C.IPCIDR {
 				canWrite = true
 			} else {
+				r.lock.Lock()
 				newRules = append(newRules, rule)
+				r.lock.Unlock()
 			}
 			if canWrite {
 				var path = rulePath + "/" + p
@@ -392,10 +401,13 @@ func (r *FileRule) writeRules(rules []C.Rule) []C.Rule {
 				}
 			}
 			<-limit
+			waitGroup.Done()
 		}
 		go handleRule(rule)
 		limit <- 1
+		waitGroup.Add(1)
 	}
+	waitGroup.Wait()
 	return newRules
 }
 

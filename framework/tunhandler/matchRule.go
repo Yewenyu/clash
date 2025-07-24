@@ -29,8 +29,8 @@ func (p *IPPacket) Match(proxyName string) bool {
 		return false
 	}
 	isContains := func(metadata *C.Metadata) bool {
-		_, exist, rule := tRule.Match(metadata)
-		if exist {
+		rule := tRule.Match(metadata)
+		if rule != nil {
 			return strings.Contains(rule.Adapter(), proxyName)
 		}
 		return false
