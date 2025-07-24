@@ -52,8 +52,6 @@ func (r *TRule) SetHttpEnable(b bool) {
 
 func (r *TRule) GetRule() []C.Rule {
 	rs := r.Rules
-	ss := rs[0].Payload()
-	_ = ss
 	return rs
 }
 func (r *TRule) MatchCRule(meta *C.Metadata) (int, C.Rule) {
@@ -452,7 +450,7 @@ func hostMath(host string) C.Rule {
 	for i, v := range arr {
 		path := last + "/" + v
 		if _, err := os.Stat(path); err != nil {
-			break
+			continue
 		}
 		last = path
 		index = i

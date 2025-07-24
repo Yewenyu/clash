@@ -189,7 +189,7 @@ func preHandleMetadata(metadata *C.Metadata) error {
 func resolveMetadata(ctx C.PlainContext, metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err error) {
 
 	var mode = mode
-	if metadata.UDPAddr() != nil && DNSRelay && !strings.Contains(metadata.UDPAddr().String(), "53") {
+	if metadata.UDPAddr() != nil && DNSRelay && !strings.Contains(metadata.UDPAddr().String(), ":53") {
 		mode = Direct
 	}
 
