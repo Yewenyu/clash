@@ -102,6 +102,9 @@ func RunByConfig(configString string, externalController string, dnsRelay bool, 
 	return nil
 
 }
+func CheckDNSWithDomainRule(b bool) {
+	dnstunnel.CheckDNSWithDomainRule = b
+}
 
 func CloseAllConnections() {
 	snapshot := statistic.DefaultManager.Snapshot()
@@ -137,8 +140,9 @@ func CustomLogFile(logPath string, level int, maxCount int) {
 	log.CustomLogPath(logPath, level, maxCount)
 }
 
-func SetGCPrecent(v int) {
-	debug.SetGCPercent(v)
+func SetGCPrecent(precent int, v int64) {
+	debug.SetGCPercent(precent)
+	debug.SetMemoryLimit(v << 20)
 }
 func FreeOSMemory() {
 	debug.FreeOSMemory()

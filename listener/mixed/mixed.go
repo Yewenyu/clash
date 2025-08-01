@@ -65,7 +65,9 @@ func New(addr string, in chan<- C.ConnContext) (C.Listener, error) {
 				}
 				continue
 			}
+
 			handleConn(c, in, ml.cache)
+			// time.Sleep(time.Millisecond * 100)
 		}
 	}()
 

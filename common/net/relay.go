@@ -242,6 +242,10 @@ func (p *RunPool) stopConns(count, timeout int) {
 		if connsInfo.leftConn == nil || connsInfo.rightConn == nil {
 			continue
 		}
+		if timeout == 0 {
+			connsInfo.leftConn.Close()
+			continue
+		}
 
 		connsInfo.timeout = timeout
 		connsInfo.leftConn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
@@ -277,7 +281,23 @@ func (p *RunPool) relay(connInfo *ConnsInfo) {
 	if useDNSTimeout {
 		timeout = DNSTimeout
 	}
+
+	defer func() {
+		rightConn.SetReadDeadline(time.Now())
+		connInfo.lock.Lock()
+		connInfo.rightConn = nil
+		connInfo.leftConn = nil
+		connInfo.lock.Unlock()
+	}()
 	connInfo.timeout = timeout
+	buf := make([]byte, 10)
+	n, err := leftConn.Read(buf)
+	if err != nil {
+		rightConn.Close()
+		leftConn.Close()
+		return
+	}
+	rightConn.Write(buf[:n])
 	handle := func(w, r net.Conn) {
 		b := pool.Get(TCPBufferSize)
 		defer pool.Put(b)
@@ -304,10 +324,5 @@ func (p *RunPool) relay(connInfo *ConnsInfo) {
 	}
 	go handle(rightConn, leftConn)
 	handle(leftConn, rightConn)
-	rightConn.SetReadDeadline(time.Now())
-	connInfo.lock.Lock()
-	connInfo.rightConn = nil
-	connInfo.leftConn = nil
-	connInfo.lock.Unlock()
 
 }

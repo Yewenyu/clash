@@ -18,6 +18,7 @@ import (
 )
 
 var UseFileRule = true
+var CheckDNSWithDomainRule = false
 var FileR *FileRule
 var Out_tRule *TRule = CreateTRule(make([]C.Rule, 0))
 
@@ -31,16 +32,24 @@ type TRule struct {
 
 func CreateTRule(rules []C.Rule) *TRule {
 
-	if UseFileRule && len(rules) > 0 {
-		FileR = CreateFileRule()
-		rules = FileR.writeRules(rules, true)
-	}
-
 	rule := &TRule{
 		Rules:     rules,
 		machIpMap: make(map[string]int),
 	}
-	// go rule.getIpRuleFromDomain()
+	if UseFileRule && len(rules) > 0 {
+		go func() {
+			FileR = CreateFileRule()
+			rs := FileR.writeRules(rules, true)
+			rule.l.Lock()
+			rule.Rules = rs
+			rule.l.Unlock()
+		}()
+
+	}
+	if CheckDNSWithDomainRule {
+		go rule.getIpRuleFromDomain()
+	}
+
 	return rule
 }
 
@@ -403,9 +412,10 @@ func (r *FileRule) writeRules(rules []C.Rule, clear bool) []C.Rule {
 			<-limit
 			waitGroup.Done()
 		}
+		waitGroup.Add(1)
 		go handleRule(rule)
 		limit <- 1
-		waitGroup.Add(1)
+
 	}
 	waitGroup.Wait()
 	return newRules

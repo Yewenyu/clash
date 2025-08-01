@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/Dreamacro/clash/config"
 	C "github.com/Dreamacro/clash/constant"
@@ -164,15 +165,30 @@ func handleConnection(conn net.Conn, controllerURL string, bearerToken string) {
 	// 读取数据直到连接关闭
 	for {
 		n, err := conn.Read(buffer)
+
 		if err != nil {
 			if err != io.EOF {
 				fmt.Printf("Failed to read from connection: %v\n", err)
 			}
 			break
 		}
+		buf := buffer[:n]
+		for {
+			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			buffer := make([]byte, 20240)
+			n, err := conn.Read(buffer)
+			if err != nil {
+				if err != io.EOF {
+					fmt.Printf("Failed to read from connection: %v\n", err)
+				}
+				break
+			}
+			b := buffer[:n]
+			buf = append(buf, b...)
+		}
 
 		// 将接收到的数据写入文件
-		if err := os.WriteFile(configFile, buffer[:n], 0644); err != nil {
+		if err := os.WriteFile(configFile, buf, 0644); err != nil {
 			fmt.Printf("Failed to write to file: %v\n", err)
 			continue
 		}
