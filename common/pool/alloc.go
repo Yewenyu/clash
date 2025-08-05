@@ -13,7 +13,7 @@ var defaultAllocator = NewAllocator()
 
 // Allocator for incoming frames, optimized to prevent overwriting after zeroing
 type Allocator struct {
-	buffers []*ObjectPool
+	buffers []*sync.Pool
 }
 
 // NewAllocator initiates a []byte allocator for frames less than 65536 bytes,
@@ -21,12 +21,14 @@ type Allocator struct {
 // no more than 50%.
 func NewAllocator() *Allocator {
 	alloc := new(Allocator)
-	alloc.buffers = make([]*ObjectPool, 17) // 1B -> 64K
+	alloc.buffers = make([]*sync.Pool, 17) // 1B -> 64K
 	for k := range alloc.buffers {
 		i := k
-		alloc.buffers[k] = NewObjectPool(20, func() interface{} {
-			return make([]byte, 1<<uint32(i))
-		})
+		alloc.buffers[k] = &sync.Pool{
+			New: func() interface{} {
+				return make([]byte, 1<<uint32(i))
+			},
+		}
 	}
 	return alloc
 }
