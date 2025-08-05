@@ -3,9 +3,14 @@ package socks
 import (
 	"io"
 	"net"
+	"runtime"
+	"sync"
+	"time"
 
 	"github.com/Dreamacro/clash/adapter/inbound"
+	connmanager "github.com/Dreamacro/clash/common/connManager"
 	N "github.com/Dreamacro/clash/common/net"
+	"github.com/Dreamacro/clash/common/pool"
 	C "github.com/Dreamacro/clash/constant"
 	authStore "github.com/Dreamacro/clash/listener/auth"
 	"github.com/Dreamacro/clash/transport/socks4"
@@ -95,9 +100,82 @@ func HandleSocks5(conn net.Conn, in chan<- C.ConnContext) {
 		return
 	}
 	if command == socks5.CmdUDPAssociate {
-		defer conn.Close()
-		io.Copy(io.Discard, conn)
+		udpLock.Lock()
+		if udpQueuePool == nil {
+			udpQueuePool = N.NewQueuePool(connmanager.TCPMaxCount)
+		}
+		udpLock.Unlock()
+		udpQueuePool.AddConns(&UdpConnsInfo{
+			conn:       conn,
+			timeout:    N.UdpTimeOut,
+			key:        conn.LocalAddr().String(),
+			activeTime: time.Now(),
+		})
 		return
 	}
 	in <- inbound.NewSocket(target, conn, C.SOCKS5)
+}
+
+var udpLock sync.Mutex
+var udpQueuePool *N.QueuePool
+
+type UdpConnsInfo struct {
+	conn       net.Conn
+	key        string
+	activeTime time.Time
+	timeout    int
+	lock       sync.Mutex
+}
+
+func (u *UdpConnsInfo) Key() string {
+	return u.key
+}
+
+func (u *UdpConnsInfo) SetActiveTime(time time.Time) {
+	u.activeTime = time
+}
+func (u *UdpConnsInfo) IsDns() bool {
+	return false
+}
+func (u *UdpConnsInfo) Lock() *sync.Mutex {
+	return &u.lock
+}
+
+func (u *UdpConnsInfo) ActiveTime() time.Time {
+	return u.activeTime
+}
+
+func (u *UdpConnsInfo) IsStop() bool {
+	return u.conn == nil
+}
+
+func (u *UdpConnsInfo) Close() {
+	u.conn.Close()
+	u.conn = nil
+}
+func (u *UdpConnsInfo) Timeout() int {
+	return u.timeout
+}
+func (u *UdpConnsInfo) SetTimeout(timeout int) {
+	u.timeout = timeout
+}
+
+func (u *UdpConnsInfo) Relay() {
+	buf := pool.Get(pool.UDPBufferSize)
+	conn := u.conn
+	defer pool.Put(buf)
+	defer conn.Close()
+	defer runtime.GC()
+
+	for {
+		conn.SetDeadline(time.Now().Add(time.Second * time.Duration(N.UdpTimeOut)))
+		n, err := conn.Read(buf)
+		if err != nil {
+			break
+		}
+		u.lock.Lock()
+		u.SetActiveTime(time.Now())
+		u.lock.Unlock()
+		io.Discard.Write(buf[:n])
+	}
 }

@@ -255,7 +255,7 @@ func handleUDPConn(packet *inbound.PacketAdapter) {
 	handle := func() bool {
 		pc := natTable.Get(key)
 		if pc != nil {
-			handleUDPToRemote(packet, pc, metadata)
+			go handleUDPToRemote(packet, pc, metadata)
 			return true
 		}
 		return false
@@ -274,7 +274,6 @@ func handleUDPConn(packet *inbound.PacketAdapter) {
 
 		if loaded {
 			cond.L.Lock()
-			cond.Wait()
 			handle()
 			cond.L.Unlock()
 			return

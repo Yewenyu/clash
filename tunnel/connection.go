@@ -5,8 +5,10 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 
+	connmanager "github.com/Dreamacro/clash/common/connManager"
 	N "github.com/Dreamacro/clash/common/net"
 	"github.com/Dreamacro/clash/common/pool"
 	C "github.com/Dreamacro/clash/constant"
@@ -42,14 +44,65 @@ func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, metadata *C.Metadata
 	return nil
 }
 
-func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, fAddr netip.Addr) {
+var udpLock sync.Mutex
+var udpQueuePool *N.QueuePool
+
+type udpInfo struct {
+	packet       C.UDPPacket
+	pc           net.PacketConn
+	oAddr, fAddr netip.Addr
+	key          string
+	activeTime   time.Time
+	timeout      int
+	lock         sync.Mutex
+	stop         bool
+}
+
+func (u *udpInfo) Key() string {
+	return u.key
+}
+
+func (u *udpInfo) SetActiveTime(time time.Time) {
+	u.activeTime = time
+}
+func (u *udpInfo) IsDns() bool {
+	return false
+}
+func (u *udpInfo) Lock() *sync.Mutex {
+	return &u.lock
+}
+
+func (u *udpInfo) ActiveTime() time.Time {
+	return u.activeTime
+}
+
+func (u *udpInfo) IsStop() bool {
+	return u.stop
+}
+
+func (u *udpInfo) Close() {
+	natTable.Delete(u.key)
+	u.pc.Close()
+	u.stop = true
+}
+func (u *udpInfo) Timeout() int {
+	return u.timeout
+}
+func (u *udpInfo) SetTimeout(timeout int) {
+	u.timeout = timeout
+}
+
+func (u *udpInfo) Relay() {
+	pc := u.pc
+	oAddr := u.oAddr
+	fAddr := u.fAddr
+	packet := u.packet
 	buf := pool.Get(pool.UDPBufferSize)
 	defer pool.Put(buf)
-	defer natTable.Delete(key)
-	defer pc.Close()
+	defer u.Close()
 
 	for {
-		pc.SetReadDeadline(time.Now().Add(time.Duration(N.UdpTimeOut) * time.Second))
+		pc.SetReadDeadline(time.Now().Add(time.Duration(u.timeout) * time.Second))
 		n, from, err := pc.ReadFrom(buf)
 		if err != nil {
 			return
@@ -74,6 +127,24 @@ func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, 
 			return
 		}
 	}
+}
+
+func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, fAddr netip.Addr) {
+	udpLock.Lock()
+	if udpQueuePool == nil {
+		udpQueuePool = N.NewQueuePool(connmanager.TCPMaxCount)
+	}
+	udpLock.Unlock()
+	udpQueuePool.AddConns(&udpInfo{
+		packet:     packet,
+		pc:         pc,
+		key:        key,
+		oAddr:      oAddr,
+		fAddr:      fAddr,
+		activeTime: time.Now(),
+		timeout:    N.UdpTimeOut,
+	})
+
 }
 
 func handleSocket(ctx C.ConnContext, outbound net.Conn, useHttpTimeout, useDNSTimeout bool) {
