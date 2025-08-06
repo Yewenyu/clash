@@ -102,7 +102,9 @@ func (u *udpInfo) Relay() {
 	defer u.Close()
 
 	for {
+		u.lock.Lock()
 		pc.SetReadDeadline(time.Now().Add(time.Duration(u.timeout) * time.Second))
+		u.lock.Unlock()
 		n, from, err := pc.ReadFrom(buf)
 		if err != nil {
 			return
@@ -135,7 +137,7 @@ func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, 
 		udpQueuePool = N.NewQueuePool(connmanager.TCPMaxCount)
 	}
 	udpLock.Unlock()
-	udpQueuePool.AddConns(&udpInfo{
+	info := udpInfo{
 		packet:     packet,
 		pc:         pc,
 		key:        key,
@@ -143,7 +145,8 @@ func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, 
 		fAddr:      fAddr,
 		activeTime: time.Now(),
 		timeout:    N.UdpTimeOut,
-	})
+	}
+	udpQueuePool.AddConns(&info)
 
 }
 

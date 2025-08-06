@@ -168,7 +168,9 @@ func (u *UdpConnsInfo) Relay() {
 	defer runtime.GC()
 
 	for {
-		conn.SetDeadline(time.Now().Add(time.Second * time.Duration(N.UdpTimeOut)))
+		u.lock.Lock()
+		conn.SetDeadline(time.Now().Add(time.Second * time.Duration(u.timeout)))
+		u.lock.Unlock()
 		n, err := conn.Read(buf)
 		if err != nil {
 			break
