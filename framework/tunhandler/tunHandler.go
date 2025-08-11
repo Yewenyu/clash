@@ -3,8 +3,13 @@ package tunhandler
 import (
 	"encoding/json"
 	"fmt"
+	"gts"
+	"net"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/Dreamacro/clash/constant"
@@ -240,4 +245,233 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 	}
 
 	return outFD.toJsonString()
+}
+
+type TunTestConfig struct {
+	RuleProxy string `json:"rule_proxy"`
+	GtsConfig string `json:"gts_config"`
+}
+type TunBytes struct {
+	TunKey string `json:"tun_key"`
+	Bytes  []byte `json:"bytes"`
+}
+type BytesLength struct {
+	Length int `json:"length"`
+}
+
+var (
+	directKey = "default"
+	outKey    = "Out"
+)
+
+func StartListenFD(port int) {
+	log.Infoln("StartListenFD port: %d", port)
+
+	// 从命令行参数获取端口（如果提供）
+	if len(os.Args) > 1 {
+		p, err := strconv.Atoi(os.Args[1])
+		if err == nil && p > 0 && p <= 65535 {
+			port = p
+		} else {
+			log.Fatalln("无效的端口号，使用默认端口 8080")
+		}
+	}
+
+	// 创建UDP地址结构
+	addr := net.UDPAddr{
+		IP:   net.IPv4(0, 0, 0, 0), // 监听所有可用网络接口
+		Port: port,
+	}
+
+	// 监听UDP端口
+	conn, err := net.ListenUDP("udp", &addr)
+	if err != nil {
+		log.Fatalln("无法监听UDP端口 %d: %v", port, err)
+	}
+	defer conn.Close()
+
+	log.Infoln("UDP服务器已启动，正在监听端口 %d...", port)
+
+	// 缓冲区用于接收数据
+	buffer := make([]byte, 4096)
+
+	fd1, fd2 := createTestFD()
+	if fd1 == -1 || fd2 == -1 {
+		log.Fatalln("CreateTestFD failed")
+	}
+
+	// 持续接收数据
+	bytes := make([]byte, 0)
+	var bLength *BytesLength
+	outFd := -1
+
+	var once sync.Once
+
+	for {
+		// 读取UDP数据包
+		n, clientAddr, err := conn.ReadFromUDP(buffer)
+		if err != nil {
+			log.Debugln("接收数据错误: %v", err)
+			continue
+		}
+		once.Do(func() {
+			readWrteFD(fd1, 1500, "udp", nil, func(b []byte) {
+				tunBytes := TunBytes{
+					TunKey: directKey,
+					Bytes:  b,
+				}
+				bytes, _ := json.Marshal(tunBytes)
+				writeToUdp(conn, bytes, clientAddr)
+			})
+		})
+		if bLength == nil {
+			bLength = &BytesLength{}
+			err = json.Unmarshal(buffer[:n], bLength)
+			if err != nil {
+				log.Debugln("Unmarshal error: %v", err)
+				continue
+			}
+		}
+		bytes = append(bytes, buffer[:n]...)
+		if len(bytes) < bLength.Length {
+			continue
+		}
+
+		bLength = nil
+		var tunBytes TunBytes
+		err = json.Unmarshal(bytes, &tunBytes)
+		if err == nil {
+			if tunBytes.TunKey == directKey {
+				writeFD(fd2, tunBytes.Bytes)
+			} else {
+				writeFD(outFd, tunBytes.Bytes)
+			}
+			continue
+		}
+		var tunTest TunTestConfig
+		err = json.Unmarshal(bytes, &tunTest)
+		if err == nil {
+			log.Infoln("tunTest: %v", tunTest)
+			outFd = handleTunTest(tunTest, fd2)
+			go readWrteFD(outFd, 1500, "udp", nil, func(b []byte) {
+				tunBytes := TunBytes{
+					TunKey: outKey,
+					Bytes:  b,
+				}
+				bytes, _ := json.Marshal(tunBytes)
+				writeToUdp(conn, bytes, clientAddr)
+			})
+			continue
+		}
+
+	}
+}
+func writeToUdp(conn *net.UDPConn, b []byte, addr *net.UDPAddr) {
+	bLength := &BytesLength{
+		Length: len(b),
+	}
+	blBytes, _ := json.Marshal(bLength)
+	conn.WriteToUDP(blBytes, addr)
+	conn.WriteToUDP(b, addr)
+}
+
+func StartTest(fd int, addr string, gtsConfig string) int {
+
+	spilt := strings.Split(addr, ":")
+	port, _ := strconv.Atoi(spilt[2])
+	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{
+		IP:   net.IP(spilt[1]),
+		Port: port,
+	})
+	if err != nil {
+		log.Debugln("DialUDP error: %v", err)
+		return -1
+	}
+	fd1, fd2 := createTestFD()
+
+	go readWrteFD(fd, 1500, "udp", nil, func(b []byte) {
+		tunBytes := TunBytes{
+			TunKey: directKey,
+			Bytes:  b,
+		}
+		bytes, _ := json.Marshal(tunBytes)
+		writeToUdp(conn, bytes, nil)
+	})
+	go readWrteFD(fd1, 1500, "udp", nil, func(b []byte) {
+		tunBytes := TunBytes{
+			TunKey: outKey,
+			Bytes:  b,
+		}
+		bytes, _ := json.Marshal(tunBytes)
+		writeToUdp(conn, bytes, nil)
+	})
+
+	go func() {
+		b := make([]byte, 1600)
+		var bLength *BytesLength
+		bytes := make([]byte, 0)
+		for {
+
+			n, _, err := conn.ReadFromUDP(b)
+			if err != nil {
+				log.Debugln("ReadFromUDP error: %v", err)
+				continue
+			}
+
+			if bLength == nil {
+				bLength = &BytesLength{}
+				err = json.Unmarshal(b[:n], &bLength)
+				if err != nil {
+					log.Debugln("Unmarshal error: %v", err)
+					bLength = nil
+				}
+				continue
+			}
+			if len(b) < bLength.Length {
+				continue
+			}
+			bytes = append(bytes, b[:n]...)
+			if len(bytes) < bLength.Length {
+				continue
+			}
+			var tunBytes TunBytes
+			err = json.Unmarshal(bytes, &tunBytes)
+			if err == nil {
+				if tunBytes.TunKey == directKey {
+					writeFD(fd, tunBytes.Bytes)
+				} else {
+					writeFD(fd1, tunBytes.Bytes)
+				}
+			}
+		}
+	}()
+	return fd2
+}
+func handleTunTest(tunTest TunTestConfig, fd2 int) int {
+	ruleProxy := tunTest.RuleProxy
+	s := CreateFD(fd2, 1500, ruleProxy)
+	var outFd OutFD
+	err := json.Unmarshal([]byte(s), &outFd)
+	if err != nil {
+		log.Debugln("Unmarshal error: %v", err)
+		return -1
+	}
+	fd := outFd.DefaultFd
+	v, success := outFd.ProxyFD[ruleProxy]
+	out := -1
+	if success {
+		out = fd
+		fd = v
+	}
+	go gts.StartGTSWith(tunTest.GtsConfig, fd)
+	return out
+}
+
+func createTestFD() (int, int) {
+	fd1, fd2, err := createPipe()
+	if err != nil {
+		log.Debugln("Socketpair creation failed: %v\n", err)
+		return -1, -1
+	}
+	return fd1, fd2
 }
