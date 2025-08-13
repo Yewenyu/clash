@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"gts"
 	"net"
-	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -43,7 +41,7 @@ func setNonBlocking(fd int) error {
 	}
 	return nil
 }
-func createPipe() (int, int, error) {
+func createPipe(nonBlocking bool) (int, int, error) {
 	// 创建 socketpair
 	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_DGRAM, 0)
 	if err != nil {
@@ -54,14 +52,16 @@ func createPipe() (int, int, error) {
 	fd1 := fds[0]
 	fd2 := fds[1]
 
-	// 设置 fd1 和 fd2 为非阻塞模式
-	if err := setNonBlocking(fd1); err != nil {
-		log.Debugln("Failed to set fd1 non-blocking: %v\n", err)
-		return -1, -1, err
-	}
-	if err := setNonBlocking(fd2); err != nil {
-		log.Debugln("Failed to set fd2 non-blocking: %v\n", err)
-		return -1, -1, err
+	if nonBlocking {
+		// 设置 fd1 和 fd2 为非阻塞模式
+		if err := setNonBlocking(fd1); err != nil {
+			log.Debugln("Failed to set fd1 non-blocking: %v\n", err)
+			return -1, -1, err
+		}
+		if err := setNonBlocking(fd2); err != nil {
+			log.Debugln("Failed to set fd2 non-blocking: %v\n", err)
+			return -1, -1, err
+		}
 	}
 	setSocketBufferSize(fd1, 1024*1024)
 	setSocketBufferSize(fd2, 1024*1024)
@@ -86,6 +86,21 @@ func writeFD(fd int, bytes []byte) {
 func readWrteFD(from, mtu int, flabel string, handle handleFdFunc, writeFunc WriteFunc) {
 	go func() {
 		buffer := make([]byte, mtu)
+		writeChan := make(chan []byte, 10)
+
+		handleWrite := func() {
+			for {
+				data := <-writeChan
+				if writeFunc != nil {
+					writeFunc(data)
+					continue
+				}
+				to, _ := handle(data)
+				writeFD(to, data)
+			}
+		}
+		go handleWrite()
+		go handleWrite()
 		for {
 			// 读取数据
 			n, err := syscall.Read(from, buffer)
@@ -99,15 +114,7 @@ func readWrteFD(from, mtu int, flabel string, handle handleFdFunc, writeFunc Wri
 			}
 			if n > 0 {
 				data := buffer[:n]
-				if writeFunc != nil {
-					writeFunc(data)
-					continue
-				}
-				to, tlabel := handle(data)
-				_ = tlabel
-				// log.Debugln("[tun handle][%s -> %s] read: %v\n", flabel, tlabel, n)
-
-				writeFD(to, data)
+				writeChan <- data
 			}
 		}
 	}()
@@ -180,16 +187,17 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 		})
 		ruleProxys = append(ruleProxys, proxys...)
 	}
-	fdMap := make(map[string]fdPipe)
+	fdMap := make(map[string]*fdPipe)
 	outFD := OutFD{ProxyFD: make(map[string]int)}
 	for _, r := range ruleProxys {
-		fd1, fd2, err := createPipe()
+
+		fd1, fd2, err := createPipe(false)
 		if err != nil {
 			log.Debugln("Socketpair creation failed: %v\n", err)
 			return ""
 		}
 
-		fdMap[r] = fdPipe{in: fd1, out: fd2, name: r}
+		fdMap[r] = &fdPipe{in: fd1, out: fd2, name: r}
 		if r == defaultKey {
 			outFD.DefaultFd = fd2
 		} else {
@@ -200,12 +208,18 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 
 	starTun = func(logS string) {
 		log.Infoln("startTun handle proxy: %v", logS)
+		proxyDic := make(map[string]*fdPipe)
+		var lock sync.Mutex
 		readWrteFD(tunFd, mtu, tunName, func(b []byte) (int, string) {
 
 			StartCapture(b)
 			// 不在这里先获取defaultKey，先尝试匹配
 			p, err := Unpack(b)
 			if err == nil && len(fdMap) > 1 {
+				v, ok := proxyDic[p.DestinationIPString()]
+				if ok {
+					return v.in, v.name
+				}
 				for k, v := range fdMap {
 					// 跳过defaultKey，优先检查其他规则
 					if k == defaultKey {
@@ -213,9 +227,17 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 					}
 					if p.Match(k) {
 						log.Debugln("[tun handle][rule match]%s match [%s]", p.DestinationIPString(), k)
+						lock.Lock()
+						proxyDic[p.DestinationIPString()] = v
+						lock.Unlock()
 						return v.in, v.name
 					}
 				}
+				fdPipe := fdMap[defaultKey]
+				lock.Lock()
+				proxyDic[p.DestinationIPString()] = fdPipe
+				lock.Unlock()
+				return fdPipe.in, fdPipe.name
 			}
 
 			// 如果前面没匹配上，就fallback到defaultKey
@@ -238,7 +260,7 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 				if err == nil {
 					go p.SetDNSCach()
 				}
-				newb := append([]byte(nil), b...)
+				newb := append([]byte{}, b...)
 				go func(b []byte) { bytesChan <- b }(newb)
 			})
 		}
@@ -266,16 +288,6 @@ var (
 
 func StartListenFD(port int) {
 	log.Infoln("StartListenFD port: %d", port)
-
-	// 从命令行参数获取端口（如果提供）
-	if len(os.Args) > 1 {
-		p, err := strconv.Atoi(os.Args[1])
-		if err == nil && p > 0 && p <= 65535 {
-			port = p
-		} else {
-			log.Fatalln("无效的端口号，使用默认端口 8080")
-		}
-	}
 
 	// 创建UDP地址结构
 	addr := net.UDPAddr{
@@ -329,8 +341,9 @@ func StartListenFD(port int) {
 			err = json.Unmarshal(buffer[:n], bLength)
 			if err != nil {
 				log.Debugln("Unmarshal error: %v", err)
-				continue
+
 			}
+			continue
 		}
 		bytes = append(bytes, buffer[:n]...)
 		if len(bytes) < bLength.Length {
@@ -340,16 +353,19 @@ func StartListenFD(port int) {
 		bLength = nil
 		var tunBytes TunBytes
 		err = json.Unmarshal(bytes, &tunBytes)
-		if err == nil {
+
+		if err == nil && len(tunBytes.Bytes) > 0 {
 			if tunBytes.TunKey == directKey {
-				writeFD(fd2, tunBytes.Bytes)
+				writeFD(fd1, tunBytes.Bytes)
 			} else {
 				writeFD(outFd, tunBytes.Bytes)
 			}
+			bytes = bytes[:0]
 			continue
 		}
 		var tunTest TunTestConfig
 		err = json.Unmarshal(bytes, &tunTest)
+		bytes = bytes[:0]
 		if err == nil {
 			log.Infoln("tunTest: %v", tunTest)
 			outFd = handleTunTest(tunTest, fd2)
@@ -366,27 +382,39 @@ func StartListenFD(port int) {
 
 	}
 }
-func writeToUdp(conn *net.UDPConn, b []byte, addr *net.UDPAddr) {
+func writeToUdp(conn net.Conn, b []byte, addr *net.UDPAddr) {
 	bLength := &BytesLength{
 		Length: len(b),
 	}
 	blBytes, _ := json.Marshal(bLength)
-	conn.WriteToUDP(blBytes, addr)
-	conn.WriteToUDP(b, addr)
+	if addr == nil {
+		conn.Write(blBytes)
+		conn.Write(b)
+		return
+	}
+	udpConn, ok := conn.(*net.UDPConn)
+	if !ok {
+		log.Debugln("conn is not udp conn")
+		return
+	}
+	udpConn.WriteToUDP(blBytes, addr)
+	udpConn.WriteToUDP(b, addr)
 }
 
 func StartTest(fd int, addr string, gtsConfig string) int {
 
-	spilt := strings.Split(addr, ":")
-	port, _ := strconv.Atoi(spilt[2])
-	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{
-		IP:   net.IP(spilt[1]),
-		Port: port,
-	})
+	conn, err := net.Dial("udp", addr)
 	if err != nil {
 		log.Debugln("DialUDP error: %v", err)
 		return -1
 	}
+	tunCfg := &TunTestConfig{
+		RuleProxy: "out",
+		GtsConfig: gtsConfig,
+	}
+
+	tunCfgBytes, _ := json.Marshal(tunCfg)
+	writeToUdp(conn, tunCfgBytes, nil)
 	fd1, fd2 := createTestFD()
 
 	go readWrteFD(fd, 1500, "udp", nil, func(b []byte) {
@@ -412,7 +440,7 @@ func StartTest(fd int, addr string, gtsConfig string) int {
 		bytes := make([]byte, 0)
 		for {
 
-			n, _, err := conn.ReadFromUDP(b)
+			n, err := conn.Read(b)
 			if err != nil {
 				log.Debugln("ReadFromUDP error: %v", err)
 				continue
@@ -434,6 +462,7 @@ func StartTest(fd int, addr string, gtsConfig string) int {
 			if len(bytes) < bLength.Length {
 				continue
 			}
+			bLength = nil
 			var tunBytes TunBytes
 			err = json.Unmarshal(bytes, &tunBytes)
 			if err == nil {
@@ -468,7 +497,7 @@ func handleTunTest(tunTest TunTestConfig, fd2 int) int {
 }
 
 func createTestFD() (int, int) {
-	fd1, fd2, err := createPipe()
+	fd1, fd2, err := createPipe(true)
 	if err != nil {
 		log.Debugln("Socketpair creation failed: %v\n", err)
 		return -1, -1

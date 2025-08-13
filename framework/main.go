@@ -304,6 +304,9 @@ func HandleTun(fd, mtu int, ruleProxy string) string {
 func StartGTS(config string, fd int) string {
 	return gts.StartGTSWith(config, fd)
 }
+func TestGTSTun(addr, config string, fd int) int {
+	return tunhandler.StartTest(fd, addr, config)
+}
 
 // func StartTun2socks(tunfd int, host string, port int, mtu int, udpEnable bool, udpTimeout int) string {
 // 	return client.StartTun2socks(tunfd, host, port, mtu, udpEnable, udpTimeout)
