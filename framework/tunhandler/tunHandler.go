@@ -100,20 +100,21 @@ func readWrteFD(from, mtu int, flabel string, handle handleFdFunc, writeFunc Wri
 			}
 		}
 		go handleWrite()
-		go handleWrite()
+		// go handleWrite()
 		for {
 			// 读取数据
 			n, err := syscall.Read(from, buffer)
 			if err != nil {
 				if err == syscall.EAGAIN {
 					// 非阻塞模式下没有数据可读时，跳过并继续
+					// time.Sleep(100 * time.Millisecond)
 					continue
 				}
 				// log.Debugln("[tun handle][%s] Read failed: %v\n", flabel, err)
 				break
 			}
 			if n > 0 {
-				data := buffer[:n]
+				data := append([]byte{}, buffer[:n]...)
 				writeChan <- data
 			}
 		}
@@ -191,7 +192,7 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 	outFD := OutFD{ProxyFD: make(map[string]int)}
 	for _, r := range ruleProxys {
 
-		fd1, fd2, err := createPipe(false)
+		fd1, fd2, err := createPipe(true)
 		if err != nil {
 			log.Debugln("Socketpair creation failed: %v\n", err)
 			return ""
@@ -201,6 +202,7 @@ func CreateFD(tunFd int, mtu int, ruleProxy string) string {
 		if r == defaultKey {
 			outFD.DefaultFd = fd2
 		} else {
+
 			outFD.ProxyFD[r] = fd2
 		}
 	}
