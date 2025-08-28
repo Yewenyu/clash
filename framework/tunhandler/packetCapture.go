@@ -32,6 +32,7 @@ func PacketCapture(bytes []byte) {
 		go func() {
 			for {
 				b := <-captureChan
+				b = append([]byte{}, b...)
 				ipPacket, err := Unpack(b)
 				if err != nil {
 					log.Debugln("[Packet Capture]Unpack err:%v", err)
@@ -39,11 +40,10 @@ func PacketCapture(bytes []byte) {
 				}
 				if ipPacket.IsDNS() {
 					msg := ipPacket.toDNS() // 假设已定义的函数
-
+					log.Debugln("[Packet Capture] msg:%s", msg.String())
 					if len(msg.Answer) > 0 {
+						host := trimLastDot(msg.Question[0].Name)
 						for _, rr := range msg.Answer {
-							host := trimLastDot(rr.Header().Name)
-
 							var ip = ""
 							switch v := rr.(type) {
 							case *dns.A:
@@ -56,10 +56,11 @@ func PacketCapture(bytes []byte) {
 						}
 					}
 				} else {
-					ip := ipPacket.DestinationIPString()
-					HandleHostInfo("", ip)
-					ip = ipPacket.SourceIPString()
-					HandleHostInfo("", ip)
+					dest := ipPacket.DestinationIPString()
+					src := ipPacket.SourceIPString()
+					HandleHostInfo("", dest)
+					HandleHostInfo("", src)
+					log.Debugln("[Packet Capture] dest:%s, src:%s", dest, src)
 
 				}
 			}

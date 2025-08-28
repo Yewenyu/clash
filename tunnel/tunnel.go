@@ -291,6 +291,10 @@ func handleUDPConn(packet *inbound.PacketAdapter) {
 			log.Warnln("[UDP] Parse metadata failed: %s", err.Error())
 			return
 		}
+		if rule != nil && rule.Adapter() == "REJECT" {
+			packet.Drop()
+			return
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), C.DefaultUDPTimeout)
 		defer cancel()
@@ -370,6 +374,10 @@ func handleTCPConn1(connCtx C.ConnContext) {
 		connCtx.Conn().Close()
 		return
 	}
+	if rule != nil && rule.Adapter() == "REJECT" {
+		connCtx.Conn().Close()
+		return
+	}
 
 	remoteConn, err := proxy.DialContext(context.Background(), metadata.Pure())
 	if err != nil {
@@ -401,6 +409,7 @@ func handleTCPConn1(connCtx C.ConnContext) {
 			rule.Payload(),
 			remoteConn.Chains().String(),
 		)
+
 	case mode == Global:
 		log.Infoln("[TCP] %s --> %s using GLOBAL", metadata.SourceAddress(), metadata.RemoteAddress())
 	case mode == Direct:
@@ -514,6 +523,9 @@ func match(metadata *C.Metadata) (C.Proxy, C.Rule, error) {
 		}
 	}
 	if adapter != nil {
+		if r != nil && r.Adapter() == "REJECT" {
+			log.Debugln("[Matcher] %s(%s) REJECT", metadata.Host, metadata.DstIP.String())
+		}
 		return adapter, r, nil
 	}
 
