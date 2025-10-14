@@ -1,6 +1,7 @@
 package tunhandler
 
 import (
+	"runtime"
 	"sync"
 
 	"github.com/Dreamacro/clash/log"
@@ -29,42 +30,48 @@ func PacketCapture(bytes []byte) {
 		// if err != nil {
 		// 	log.Debugln("[Packet Capture] err:%v", err)
 		// }
-		go func() {
+		handle := func() {
 			for {
 				b := <-captureChan
+
 				b = append([]byte{}, b...)
 				ipPacket, err := Unpack(b)
 				if err != nil {
 					log.Debugln("[Packet Capture]Unpack err:%v", err)
 					continue
 				}
-				if ipPacket.IsDNS() {
-					msg := ipPacket.toDNS() // 假设已定义的函数
-					log.Debugln("[Packet Capture] msg:%s", msg.String())
-					if len(msg.Answer) > 0 {
-						host := trimLastDot(msg.Question[0].Name)
-						for _, rr := range msg.Answer {
-							var ip = ""
-							switch v := rr.(type) {
-							case *dns.A:
-								ip = v.A.String()
-							case *dns.AAAA:
-								ip = v.AAAA.String()
+				go func() {
+					if ipPacket.IsDNS() {
+						msg := ipPacket.toDNS() // 假设已定义的函数
+						log.Debugln("[Packet Capture] msg:%s", msg.String())
+						if len(msg.Answer) > 0 {
+							host := trimLastDot(msg.Question[0].Name)
+							for _, rr := range msg.Answer {
+								var ip = ""
+								switch v := rr.(type) {
+								case *dns.A:
+									ip = v.A.String()
+								case *dns.AAAA:
+									ip = v.AAAA.String()
+								}
+								HandleHostInfo(host, ip)
+
 							}
-							HandleHostInfo(host, ip)
-
 						}
-					}
-				} else {
-					dest := ipPacket.DestinationIPString()
-					src := ipPacket.SourceIPString()
-					HandleHostInfo("", dest)
-					HandleHostInfo("", src)
-					log.Debugln("[Packet Capture] dest:%s, src:%s", dest, src)
+					} else {
+						dest := ipPacket.DestinationIPString()
+						src := ipPacket.SourceIPString()
+						HandleHostInfo("", dest)
+						HandleHostInfo("", src)
+						log.Debugln("[Packet Capture] dest:%s, src:%s", dest, src)
 
-				}
+					}
+					runtime.GC()
+				}()
+
 			}
-		}()
+		}
+		go handle()
 	})
 
 	captureChan <- bytes
