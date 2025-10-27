@@ -1,6 +1,7 @@
 package tunhandler
 
 import (
+	"net"
 	"runtime"
 	"sync"
 
@@ -40,12 +41,13 @@ func PacketCapture(bytes []byte) {
 					log.Debugln("[Packet Capture]Unpack err:%v", err)
 					continue
 				}
-				go func() {
+				go func(ipPacket *IPPacket) {
 					if ipPacket.IsDNS() {
 						msg := ipPacket.toDNS() // 假设已定义的函数
 						log.Debugln("[Packet Capture] msg:%s", msg.String())
 						if len(msg.Answer) > 0 {
 							host := trimLastDot(msg.Question[0].Name)
+							isIp := isIPAddress(host)
 							for _, rr := range msg.Answer {
 								var ip = ""
 								switch v := rr.(type) {
@@ -54,20 +56,28 @@ func PacketCapture(bytes []byte) {
 								case *dns.AAAA:
 									ip = v.AAAA.String()
 								}
-								HandleHostInfo(host, ip)
+								h := trimLastDot(rr.Header().Name)
+								//判断host是否ip
+								if !isIp {
+									h = host
+								}
+								HandleHostInfo(h, ip, "dns查询")
 
+							}
+							if isIp {
+								HandleHostInfo(host, "", "dns查询")
 							}
 						}
 					} else {
 						dest := ipPacket.DestinationIPString()
 						src := ipPacket.SourceIPString()
-						HandleHostInfo("", dest)
-						HandleHostInfo("", src)
+						HandleHostInfo("", dest, ipPacket.ProtocolString())
+						HandleHostInfo("", src, ipPacket.ProtocolString())
 						log.Debugln("[Packet Capture] dest:%s, src:%s", dest, src)
 
 					}
 					runtime.GC()
-				}()
+				}(ipPacket)
 
 			}
 		}
@@ -76,6 +86,10 @@ func PacketCapture(bytes []byte) {
 
 	captureChan <- bytes
 
+}
+
+func isIPAddress(host string) bool {
+	return net.ParseIP(host) != nil
 }
 
 func trimLastDot(s string) string {

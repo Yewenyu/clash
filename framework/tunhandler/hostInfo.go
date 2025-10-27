@@ -2,10 +2,14 @@ package tunhandler
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
+	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,8 +17,8 @@ import (
 )
 
 var (
-	hostMap            = make(map[string]int)
-	hostInfos          = []HostInfo{}
+	hostMap            = make(map[string]*HostInfo)
+	hostInfos          = []*HostInfo{}
 	handleHostIpChan   = make(chan []string, 10)
 	hostInfoOnceHandle sync.Once
 	WritePath          string
@@ -26,51 +30,74 @@ type HostInfo struct {
 	Host           string   `json:"host"`
 	AssociatedHost []string `json:"associatedHost"`
 	AssociatedIp   []string `json:"associatedIp"`
+	Proto          []string `json:"proto"`
 }
 
-func HandleHostInfo(host string, ip string) {
+func HandleHostInfo(host string, ip string, proto string) {
 	// 将writePath的数据解析给hostInfos和hostMap
 
-	newHostInfo := func(host string) int {
+	newHostInfo := func(host, proto string) *HostInfo {
 
-		current := HostInfo{Time: time.Now().Unix(), Host: host, AssociatedHost: []string{}, AssociatedIp: []string{}}
+		current := &HostInfo{Time: time.Now().Unix(), Host: host, AssociatedHost: []string{}, AssociatedIp: []string{}}
+		if proto != "" {
+			current.Proto = []string{proto}
+		}
+
 		hostInfos = append(hostInfos, current)
-		index := len(hostInfos) - 1
-		hostMap[host] = index
-		return index
+		hostMap[host] = current
+		return current
 	}
 
 	hostInfoOnceHandle.Do(func() {
-		// err := loadHostInfoFromFile(WritePath)
-		// if err != nil {
-		// 	log.Debugln("[Packet Capture] err:%v", err)
-		// }
+
 		go func() {
 			for {
 				hosts := <-handleHostIpChan
 				host := hosts[0]
+
 				ip := hosts[1]
+				proto := hosts[2]
 				var canWrite bool
 				lock.Lock()
 				if host != "" {
-					i, found := hostMap[host]
-					if !found {
-						i = newHostInfo(host)
+					hostSuffix, err := ExtractDomain(host)
+					if err != nil {
+						hostSuffix = host
 					}
-					current := &hostInfos[i]
+					current, found := hostMap[hostSuffix]
+					if !found {
+						current = newHostInfo(hostSuffix, proto)
+					}
+					// current := &hostInfos[i]
+					if proto != "" {
+						current.Proto = append(current.Proto, proto)
+						current.Proto = uniqueStrings(current.Proto)
+					}
+					current.AssociatedHost = append(current.AssociatedHost, host)
+
 					if ip != "" {
 						current.AssociatedIp = append(current.AssociatedIp, ip)
-						hostMap[ip] = i
+						_, found = hostMap[ip]
+						if !found {
+							hostMap[ip] = current
+						}
+
 					}
 					// 去重
 					current.AssociatedHost = uniqueStrings(current.AssociatedHost)
 					current.AssociatedIp = uniqueStrings(current.AssociatedIp)
 					canWrite = true
 				} else if ip != "" {
-					_, found := hostMap[ip]
+					current, found := hostMap[ip]
 					if !found && !isLocalIP(ip) {
-						_ = newHostInfo(ip)
+						_ = newHostInfo(ip, proto)
 						canWrite = true
+					}
+					if found && proto != "" {
+						if !stringInSlice(proto, current.Proto) {
+							current.Proto = append(current.Proto, proto)
+							canWrite = true
+						}
 					}
 				}
 
@@ -87,8 +114,105 @@ func HandleHostInfo(host string, ip string) {
 		}()
 	})
 
-	handleHostIpChan <- []string{host, ip}
+	handleHostIpChan <- []string{host, ip, proto}
 
+}
+
+func ExtractDomain(rawURL string) (string, error) {
+	// 如果输入没有协议前缀，添加一个临时的
+	if !strings.Contains(rawURL, "://") && !strings.HasPrefix(rawURL, "//") {
+		rawURL = "http://" + rawURL
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("cannot extract host from URL")
+	}
+
+	// 处理端口号
+	host = strings.Split(host, ":")[0]
+
+	return ExtractPrimaryDomain(host)
+}
+
+// 方法2：直接处理域名字符串
+func ExtractPrimaryDomain(domain string) (string, error) {
+	if domain == "" {
+		return "", fmt.Errorf("empty domain")
+	}
+
+	// 转换为小写
+	domain = strings.ToLower(domain)
+
+	// 移除 www 前缀
+	domain = strings.TrimPrefix(domain, "www.")
+
+	parts := strings.Split(domain, ".")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid domain: %s", domain)
+	}
+
+	// 处理常见情况
+	switch len(parts) {
+	case 2:
+		// example.com
+		return domain, nil
+	case 3:
+		// 处理 co.uk, com.cn 等双后缀域名
+		if isDoubleSuffix(parts[1] + "." + parts[2]) {
+			if len(parts) >= 3 {
+				return strings.Join(parts[len(parts)-3:], "."), nil
+			}
+		}
+		// sub.example.com → example.com
+		return strings.Join(parts[1:], "."), nil
+	default:
+		// 处理多级子域名 sub.sub.example.com → example.com
+		if isDoubleSuffix(parts[len(parts)-2] + "." + parts[len(parts)-1]) {
+			return strings.Join(parts[len(parts)-3:], "."), nil
+		}
+		return strings.Join(parts[len(parts)-2:], "."), nil
+	}
+}
+
+// 常见的双后缀域名
+var doubleSuffixes = map[string]bool{
+	"co.uk": true, "com.uk": true, "org.uk": true, "net.uk": true,
+	"ac.uk": true, "gov.uk": true, "co.jp": true, "com.au": true,
+	"net.au": true, "org.au": true, "com.cn": true, "net.cn": true,
+	"org.cn": true, "gov.cn": true, "co.nz": true, "co.kr": true,
+	"co.il": true, "co.in": true, "com.sg": true, "com.tw": true,
+	"com.hk": true, "com.mx": true, "com.br": true,
+}
+
+func isDoubleSuffix(suffix string) bool {
+	return doubleSuffixes[suffix]
+}
+
+// 方法3：使用正则表达式（简单情况）
+func ExtractDomainRegex(input string) (string, error) {
+	// 匹配域名格式
+	re := regexp.MustCompile(`(?:https?://)?(?:www\.)?([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)`)
+	matches := re.FindStringSubmatch(input)
+	if len(matches) < 2 {
+		return "", fmt.Errorf("no domain found")
+	}
+
+	return ExtractPrimaryDomain(matches[1])
+}
+
+func stringInSlice(s string, slice []string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }
 
 // uniqueStrings 去除字符串切片中重复的元素，保持顺序不变
@@ -177,7 +301,7 @@ func ExtractUnique(hostInfos []HostInfo) []string {
 
 	return uniqueArray
 }
-func toFormattedJSON(hostInfos []HostInfo) (string, error) {
+func toFormattedJSON(hostInfos []*HostInfo) (string, error) {
 	// 使用 json.MarshalIndent 格式化 JSON，指定前缀和缩进
 	formattedJSON, err := json.MarshalIndent(hostInfos, "", "  ")
 	if err != nil {
@@ -187,7 +311,7 @@ func toFormattedJSON(hostInfos []HostInfo) (string, error) {
 	// 转为字符串返回
 	return string(formattedJSON), nil
 }
-func toFormattedJSONSorted(hostInfos []HostInfo) (string, error) {
+func toFormattedJSONSorted(hostInfos []*HostInfo) (string, error) {
 	// 先排序
 	sort.Slice(hostInfos, func(i, j int) bool {
 		return hostInfos[i].Time > hostInfos[j].Time
@@ -244,21 +368,21 @@ func loadHostInfoFromFile(path string) error {
 		return err
 	}
 
-	var loaded []HostInfo
+	var loaded []*HostInfo
 	err = json.Unmarshal(data, &loaded)
 	if err != nil {
 		return err
 	}
 
 	hostInfos = loaded
-	hostMap = make(map[string]int)
-	for i, h := range hostInfos {
-		hostMap[h.Host] = i
+	hostMap = make(map[string]*HostInfo)
+	for _, h := range hostInfos {
+		hostMap[h.Host] = h
 		for _, ah := range h.AssociatedHost {
-			hostMap[ah] = i
+			hostMap[ah] = h
 		}
 		for _, ip := range h.AssociatedIp {
-			hostMap[ip] = i
+			hostMap[ip] = h
 		}
 	}
 	return nil

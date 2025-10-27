@@ -38,7 +38,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(host, ":") {
 		host = strings.Split(host, ":")[0]
 	}
-	HandleHostInfo(host, "")
+	HandleHostInfo(host, "", r.Proto)
 	if r.Method == http.MethodConnect {
 		// 处理 CONNECT 请求（HTTPS 隧道）
 		handleTunnelingToUpstream(w, r)

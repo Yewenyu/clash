@@ -75,6 +75,18 @@ func (p *IPPacket) DestinationIPString() string {
 	return net.IP(p.DestinationIP[:]).String()
 }
 
+// 返回协议类型tcp,udp
+func (p *IPPacket) ProtocolString() string {
+	switch p.Protocol {
+	case 6:
+		return "tcp"
+	case 17:
+		return "udp"
+	default:
+		return string(p.Protocol)
+	}
+}
+
 const (
 	AF_INET  = 2  // IPv4
 	AF_INET6 = 10 // IPv6
