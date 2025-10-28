@@ -58,8 +58,9 @@ func HandleHostInfo(host string, ip string, proto string) {
 				ip := hosts[1]
 				proto := hosts[2]
 				var canWrite bool
+				isIp := isIPAddress(host)
 				lock.Lock()
-				if host != "" {
+				if host != "" && !isIp {
 					hostSuffix, err := ExtractDomain(host)
 					if err != nil {
 						hostSuffix = host
@@ -68,6 +69,7 @@ func HandleHostInfo(host string, ip string, proto string) {
 					if !found {
 						current = newHostInfo(hostSuffix, proto)
 					}
+					current.Time = time.Now().Unix()
 					// current := &hostInfos[i]
 					if proto != "" {
 						current.Proto = append(current.Proto, proto)
@@ -96,6 +98,7 @@ func HandleHostInfo(host string, ip string, proto string) {
 					if found && proto != "" {
 						if !stringInSlice(proto, current.Proto) {
 							current.Proto = append(current.Proto, proto)
+							current.Time = time.Now().Unix()
 							canWrite = true
 						}
 					}
