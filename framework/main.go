@@ -21,6 +21,7 @@ import (
 	"github.com/Dreamacro/clash/config"
 	"github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/hub/executor"
+	"github.com/Dreamacro/clash/hub/route"
 	"github.com/Dreamacro/clash/log"
 	"github.com/Dreamacro/clash/tunnel"
 	t "github.com/Dreamacro/clash/tunnel"
@@ -38,6 +39,30 @@ import (
 )
 
 // framework support
+
+// TrafficStats 流量统计数据结构
+type TrafficStats struct {
+	Upload   int64 // 上传量或上传速度(字节/秒)
+	Download int64 // 下载量或下载速度(字节/秒)
+}
+
+// TrafficCallback 流量统计回调接口
+// iOS/Android 需要实现这个接口来接收实时流量数据
+type TrafficCallback interface {
+	// OnSpeedUpdate 当网速更新时调用（每秒一次）
+	// upload: 上传速度(字节/秒)
+	// download: 下载速度(字节/秒)
+	OnSpeedUpdate(upload int64, download int64)
+
+	// OnTotalUpdate 当总流量更新时调用（每秒一次）
+	// totalUpload: 总上传量(字节)
+	// totalDownload: 总下载量(字节)
+	OnTotalUpdate(totalUpload int64, totalDownload int64)
+}
+
+var trafficCallback TrafficCallback
+var trafficMonitorRunning = false
+var stopTrafficMonitor chan struct{}
 
 func ReadConfig(path string) ([]byte, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -96,7 +121,7 @@ func RunByConfig(configString string, externalController string, dnsRelay bool, 
 	}
 	tunnel.DNSRelay = dnsRelay
 	dnstunnel.UseFileRule = diskRuleCache
-	// go route.Start(externalController, "")
+	go route.Start(externalController, "")
 	executor.ApplyConfig(cfg, true)
 	log.Infoln("apply config success")
 	return nil
@@ -111,6 +136,99 @@ func CloseAllConnections() {
 	for _, c := range snapshot.Connections {
 		c.Close()
 	}
+}
+
+// GetSpeed 获取当前实时网速
+// 返回值: TrafficStats 包含上传速度和下载速度(字节/秒)
+func GetSpeed() *TrafficStats {
+	up, down := statistic.DefaultManager.Now()
+	return &TrafficStats{
+		Upload:   up,
+		Download: down,
+	}
+}
+
+// GetTotalTraffic 获取总流量统计
+// 返回值: TrafficStats 包含总上传量和总下载量(字节)
+func GetTotalTraffic() *TrafficStats {
+	snapshot := statistic.DefaultManager.Snapshot()
+	return &TrafficStats{
+		Upload:   snapshot.UploadTotal,
+		Download: snapshot.DownloadTotal,
+	}
+}
+
+// ResetTrafficStats 重置流量统计数据
+func ResetTrafficStats() {
+	statistic.DefaultManager.ResetStatistic()
+}
+
+// GetConnectionCount 获取当前活跃连接数
+func GetConnectionCount() int {
+	snapshot := statistic.DefaultManager.Snapshot()
+	return len(snapshot.Connections)
+}
+
+// SetTrafficCallback 设置流量统计回调
+// callback: 实现了 TrafficCallback 接口的对象
+// intervalSeconds: 回调间隔时间（秒），建议使用 1
+func SetTrafficCallback(callback TrafficCallback, intervalSeconds int) {
+	if intervalSeconds <= 0 {
+		intervalSeconds = 1
+	}
+
+	// 停止旧的监控
+	StopTrafficCallback()
+
+	// 设置新的回调
+	trafficCallback = callback
+	if trafficCallback != nil {
+		startTrafficMonitor(intervalSeconds)
+	}
+}
+
+// StopTrafficCallback 停止流量统计回调
+func StopTrafficCallback() {
+	if trafficMonitorRunning && stopTrafficMonitor != nil {
+		close(stopTrafficMonitor)
+		trafficMonitorRunning = false
+	}
+	trafficCallback = nil
+}
+
+// startTrafficMonitor 启动流量监控协程
+func startTrafficMonitor(intervalSeconds int) {
+	if trafficMonitorRunning {
+		return
+	}
+
+	trafficMonitorRunning = true
+	stopTrafficMonitor = make(chan struct{})
+
+	go func() {
+		ticker := time.NewTicker(time.Duration(intervalSeconds) * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if trafficCallback != nil {
+					// 获取实时网速
+					up, down := statistic.DefaultManager.Now()
+					trafficCallback.OnSpeedUpdate(up, down)
+
+					// 获取总流量
+					snapshot := statistic.DefaultManager.Snapshot()
+					trafficCallback.OnTotalUpdate(snapshot.UploadTotal, snapshot.DownloadTotal)
+				}
+			case <-stopTrafficMonitor:
+				log.Infoln("Traffic monitor stopped")
+				return
+			}
+		}
+	}()
+
+	log.Infoln("Traffic monitor started with interval: %d seconds", intervalSeconds)
 }
 
 /*
@@ -341,6 +459,6 @@ func TestGTSTun(addr, config string, fd int) int {
 // 	defer resp.Body.Close()
 // 	return resp.Status
 
-func main() {
+// func main() {
 
-}
+// }
