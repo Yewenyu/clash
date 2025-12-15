@@ -181,3 +181,97 @@ func (u *UdpConnsInfo) Relay() {
 		io.Discard.Write(buf[:n])
 	}
 }
+
+type ConnValue struct {
+	conn   net.Conn
+	target socks5.Addr
+	in     chan<- C.ConnContext
+}
+
+// NewWaitQueue 构造函数：初始化所有chan，避免nil panic（核心修正1）
+func NewWaitQueue(maxWaitCount int, handleConn func(ConnValue)) *WaitQueue {
+	if maxWaitCount <= 0 {
+		maxWaitCount = 100 // 默认最大等待数
+	}
+	wq := &WaitQueue{
+		maxWaitCount: maxWaitCount,
+		// 初始化双队列：缓冲容量=maxWaitCount，避免写入阻塞
+		waitQueue: make(chan ConnValue, maxWaitCount),
+		// 初始化signalChan：带缓冲，避免Add阻塞在signalChan写入
+		signalChan: make(chan struct{}),
+		queueChan:  make(chan chan ConnValue),
+		clearChan:  make(chan chan ConnValue),
+		handleConn: handleConn,
+	}
+	return wq
+}
+
+type WaitQueue struct {
+	lock                 sync.Mutex
+	waitQueue            chan ConnValue
+	queueChan, clearChan chan chan ConnValue
+	signalChan           chan struct{}
+	oncdHandle           sync.Once
+	maxWaitCount         int
+	handleConn           func(ConnValue)
+}
+
+func (w *WaitQueue) Add(connValue ConnValue) {
+
+	w.oncdHandle.Do(func() {
+
+		go w.handle()
+		w.queueChan <- w.waitQueue
+	})
+
+	w.lock.Lock()
+	if len(w.waitQueue) == w.maxWaitCount {
+		v := w.waitQueue
+		w.waitQueue = make(chan ConnValue, w.maxWaitCount)
+		w.signalChan <- struct{}{}
+		go func(v chan ConnValue) {
+			w.clearChan <- v
+		}(v)
+		w.queueChan <- w.waitQueue
+	}
+	w.waitQueue <- connValue
+	w.lock.Unlock()
+
+}
+func (w *WaitQueue) handle() {
+	for queue := range w.queueChan {
+
+	signal:
+		for {
+			select {
+			case <-w.signalChan:
+				break signal
+			case connValue := <-queue:
+				w.handleConn(connValue)
+			default:
+				if len(w.queueChan) > 0 {
+					break signal
+				}
+			}
+		}
+	}
+
+	go func() {
+		for v := range w.clearChan {
+			for {
+				select {
+				case connValue := <-v:
+					connValue.conn.Close()
+				default:
+
+				}
+				if len(v) == 0 {
+					close(v)
+					break
+				}
+			}
+			runtime.GC()
+		}
+	}()
+
+}
