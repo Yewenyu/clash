@@ -102,7 +102,41 @@ type Reader struct {
 func NewReader(r io.Reader, aead cipher.AEAD) *Reader { return &Reader{Reader: r, AEAD: aead} }
 
 // Read and decrypt a record into p. len(p) >= max payload size + AEAD overhead.
-func (r *Reader) read(p []byte) (int, error) {
+func (r *Reader) read() ([]byte, error) {
+	nonce := r.nonce[:r.NonceSize()]
+	tag := r.Overhead()
+
+	// decrypt payload size
+	p := make([]byte, 2+tag)
+	if _, err := io.ReadFull(r.Reader, p); err != nil {
+		return nil, err
+	}
+	_, err := r.Open(p[:0], nonce, p, nil)
+	increment(nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	// decrypt payload
+	size := (int(p[0])<<8 + int(p[1])) & payloadSizeMask
+	if size == 0 {
+		return nil, ErrZeroChunk
+	}
+
+	if size+tag > len(p) {
+		p = append(p, make([]byte, size+tag-len(p))...)
+	}
+	if _, err := io.ReadFull(r.Reader, p); err != nil {
+		return nil, err
+	}
+	_, err = r.Open(p[:0], nonce, p, nil)
+	increment(nonce)
+	if err != nil {
+		return nil, err
+	}
+	return p[:size], nil
+}
+func (r *Reader) read1(p []byte) (int, error) {
 	nonce := r.nonce[:r.NonceSize()]
 	tag := r.Overhead()
 
@@ -139,22 +173,29 @@ func (r *Reader) read(p []byte) (int, error) {
 func (r *Reader) Read(p []byte) (int, error) {
 	if r.buf == nil {
 		if len(p) >= payloadSizeMask+r.Overhead() {
-			return r.read(p)
+			b, err := r.read()
+			if err != nil {
+				return 0, err
+			}
+			copy(p, b)
+			return len(b), nil
 		}
 		b := make([]byte, bufSize)
-		n, err := r.read(b)
+		b, err := r.read()
 		if err != nil {
 			return 0, err
 		}
-		r.buf = b[:n]
+		r.buf = b
 		r.off = 0
 	}
 
 	n := copy(p, r.buf[r.off:])
-	r.off += n
-	if r.off == len(r.buf) {
-
+	if len(r.buf) == n {
 		r.buf = nil
+	} else {
+		b := make([]byte, len(r.buf)-n)
+		copy(b, r.buf[n:])
+		r.buf = b
 	}
 	return n, nil
 }
@@ -183,14 +224,14 @@ func (r *Reader) WriteTo(w io.Writer) (n int64, err error) {
 			}
 		}
 
-		nr, er := r.read(r.buf)
+		b, er := r.read()
 		if er != nil {
 			if er != io.EOF {
 				err = er
 			}
 			return
 		}
-		r.buf = r.buf[:nr]
+		r.buf = b
 		r.off = 0
 	}
 }

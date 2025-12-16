@@ -109,7 +109,7 @@ func (u *udpInfo) Relay(buf []byte) error {
 
 	n, from, err := pc.ReadFrom(buf)
 	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		if netErr, ok := err.(net.Error); ok && netErr != nil && netErr.Timeout() {
 			return nil
 		}
 		return err
@@ -132,7 +132,7 @@ func (u *udpInfo) Relay(buf []byte) error {
 
 	_, err = packet.WriteBack(buf[:n], &fromUDPAddr)
 
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+	if netErr, ok := err.(net.Error); ok && netErr != nil && netErr.Timeout() {
 		return nil
 	}
 

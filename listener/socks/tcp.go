@@ -153,6 +153,11 @@ func (u *UdpConnsInfo) IsStop() bool {
 }
 
 func (u *UdpConnsInfo) Close() {
+	u.lock.Lock()
+	defer u.lock.Unlock()
+	if u.conn == nil {
+		return
+	}
 	u.conn.Close()
 	u.conn = nil
 }
@@ -165,14 +170,16 @@ func (u *UdpConnsInfo) SetTimeout(timeout int) {
 
 func (u *UdpConnsInfo) Relay(buf []byte) error {
 
-	if time.Now().Unix()-u.ActiveTime().Unix() > int64(u.Timeout()) {
+	u.lock.Lock()
+	defer u.lock.Unlock()
+	if time.Now().Unix()-u.ActiveTime().Unix() > int64(u.Timeout()) || u.IsStop() {
 		return net.ErrClosed
 	}
 	conn := u.conn
 	conn.SetReadDeadline(time.Now().Add(time.Microsecond * time.Duration(1)))
 	n, err := conn.Read(buf)
 	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		if netErr, ok := err.(net.Error); ok && netErr != nil && netErr.Timeout() {
 			return nil
 		}
 		return err
@@ -181,7 +188,7 @@ func (u *UdpConnsInfo) Relay(buf []byte) error {
 	u.SetActiveTime(time.Now())
 	u.lock.Unlock()
 	n, err = io.Discard.Write(buf[:n])
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+	if netErr, ok := err.(net.Error); ok && netErr != nil && netErr.Timeout() {
 		return nil
 	}
 	return err

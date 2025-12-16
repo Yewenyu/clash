@@ -2,6 +2,7 @@ package net
 
 import (
 	"net"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -116,27 +117,31 @@ func (c *ConnsInfo) SetActiveTime(time time.Time) {
 }
 
 func (connInfo *ConnsInfo) Relay(buf []byte) error {
+	connInfo.lock.Lock()
+	defer connInfo.lock.Unlock()
 	rightConn := connInfo.RightConn
 	leftConn := connInfo.LeftConn
-	if time.Now().Unix()-connInfo.ActiveTime().Unix() > int64(connInfo.Timeout()) {
+	if time.Now().Unix()-connInfo.ActiveTime().Unix() > int64(connInfo.Timeout()) || connInfo.IsStop() {
 		return net.ErrClosed
 	}
 	handleFunc := func(w, r net.Conn) error {
 		// 更新连接时间
-		r.SetReadDeadline(time.Now().Add(time.Duration(1) * time.Microsecond))
-		n, err := r.Read(buf)
-		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				return nil
+		for {
+			r.SetReadDeadline(time.Now().Add(time.Duration(1) * time.Microsecond))
+			n, err := r.Read(buf)
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr != nil && netErr.Timeout() {
+					return nil
+				}
+				return err
 			}
-			return err
+			connInfo.SetActiveTime(time.Now())
+			_, err = w.Write(buf[:n])
+			if err != nil {
+				return err
+			}
 		}
-		connInfo.SetActiveTime(time.Now())
-		_, err = w.Write(buf[:n])
-		if err != nil {
-			return err
-		}
-		return nil
+
 	}
 	err := handleFunc(rightConn, leftConn)
 	if err != nil {
@@ -188,31 +193,52 @@ func (p *QueuePool) AddConns(connsInfo ConnsInterface) {
 	p.connChan <- connsInfo
 
 	p.onOnce.Do(func() {
-		go func() {
-			conns := []ConnsInterface{}
-			handleTime := time.Now().UnixMilli()
-			for {
-
-				handle := func(infos []ConnsInterface) {
-					p.runPool.relay(infos)
-					conns = []ConnsInterface{}
-					handleTime = time.Now().UnixMilli()
-				}
-				select {
-				case connsInfo = <-p.connChan:
-					conns = append(conns, connsInfo)
-				default:
-					if time.Now().UnixMilli()-handleTime > 100 && len(conns) > 0 {
-						handle(conns)
+		for range 10 {
+			go func() {
+				buf := make([]byte, 1024*4)
+				for {
+					conns := []ConnsInterface{}
+					var canHandle = false
+					handleTime := time.Now()
+					for {
+						select {
+						case connsInfo = <-p.connChan:
+							conns = append(conns, connsInfo)
+						default:
+							if time.Now().UnixMilli()-handleTime.UnixMilli() > int64(300) {
+								canHandle = true
+							}
+						}
+						if len(conns) > 2 {
+							canHandle = true
+						}
+						if len(conns) > 0 && canHandle {
+							// defer runtime.GC()
+							for {
+								nextConns := make([]ConnsInterface, 0)
+								for _, connInfo := range conns {
+									if connInfo.IsStop() {
+										continue
+									}
+									err := connInfo.Relay(buf)
+									if err != nil {
+										connInfo.Close()
+									} else {
+										nextConns = append(nextConns, connInfo)
+									}
+								}
+								conns = nextConns
+								if len(conns) < 2 {
+									break
+								}
+							}
+							handleTime = time.Now()
+							runtime.GC()
+						}
 					}
-
 				}
-				if len(conns) > 4 {
-					handle(conns)
-				}
-
-			}
-		}()
+			}()
+		}
 
 	})
 
