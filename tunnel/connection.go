@@ -10,7 +10,6 @@ import (
 
 	connmanager "github.com/Dreamacro/clash/common/connManager"
 	N "github.com/Dreamacro/clash/common/net"
-	"github.com/Dreamacro/clash/common/pool"
 	C "github.com/Dreamacro/clash/constant"
 	gopool "github.com/Dreamacro/clash/goPool"
 	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
@@ -97,42 +96,48 @@ func (u *udpInfo) GetGoPool() pond.Pool {
 	return gopool.SubGo
 }
 
-func (u *udpInfo) Relay() {
+func (u *udpInfo) Relay(buf []byte) error {
+	// check timeout
+	if time.Now().Unix()-u.ActiveTime().Unix() > int64(u.Timeout()) {
+		return net.ErrClosed
+	}
 	pc := u.pc
 	oAddr := u.oAddr
 	fAddr := u.fAddr
 	packet := u.packet
-	buf := make([]byte, pool.UDPBufferSize)
-	defer u.Close()
+	pc.SetReadDeadline(time.Now().Add(time.Duration(1) * time.Microsecond))
 
-	for {
-		u.lock.Lock()
-		pc.SetReadDeadline(time.Now().Add(time.Duration(u.timeout) * time.Second))
-		u.lock.Unlock()
-		n, from, err := pc.ReadFrom(buf)
-		if err != nil {
-			return
+	n, from, err := pc.ReadFrom(buf)
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return nil
 		}
-
-		fromUDPAddr := *from.(*net.UDPAddr)
-		if fAddr.IsValid() {
-			fromAddr, _ := netip.AddrFromSlice(fromUDPAddr.IP)
-			fromAddr = fromAddr.Unmap()
-			if oAddr == fromAddr {
-				fromUDPAddr.IP = fAddr.AsSlice()
-			}
-		}
-		if strings.Contains(from.String(), "53") && !dnstunnel.Out_tRule.IsHttpEnable {
-			bytes := buf[:n]
-			dnstunnel.Out_tRule.HandleDnsWithChan(bytes)
-
-		}
-
-		_, err = packet.WriteBack(buf[:n], &fromUDPAddr)
-		if err != nil {
-			return
+		return err
+	}
+	fromUDPAddr := *from.(*net.UDPAddr)
+	if fAddr.IsValid() {
+		fromAddr, _ := netip.AddrFromSlice(fromUDPAddr.IP)
+		fromAddr = fromAddr.Unmap()
+		if oAddr == fromAddr {
+			fromUDPAddr.IP = fAddr.AsSlice()
 		}
 	}
+	if strings.Contains(from.String(), "53") && !dnstunnel.Out_tRule.IsHttpEnable {
+		bytes := buf[:n]
+		dnstunnel.Out_tRule.HandleDnsWithChan(bytes)
+
+	}
+	// reset timeout
+	u.SetActiveTime(time.Now())
+
+	_, err = packet.WriteBack(buf[:n], &fromUDPAddr)
+
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return nil
+	}
+
+	return err
+
 }
 
 func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, fAddr netip.Addr) {

@@ -3,14 +3,12 @@ package socks
 import (
 	"io"
 	"net"
-	"runtime"
 	"sync"
 	"time"
 
 	"github.com/Dreamacro/clash/adapter/inbound"
 	connmanager "github.com/Dreamacro/clash/common/connManager"
 	N "github.com/Dreamacro/clash/common/net"
-	"github.com/Dreamacro/clash/common/pool"
 	C "github.com/Dreamacro/clash/constant"
 	gopool "github.com/Dreamacro/clash/goPool"
 	authStore "github.com/Dreamacro/clash/listener/auth"
@@ -165,25 +163,28 @@ func (u *UdpConnsInfo) SetTimeout(timeout int) {
 	u.timeout = timeout
 }
 
-func (u *UdpConnsInfo) Relay() {
-	buf := make([]byte, pool.UDPBufferSize)
-	conn := u.conn
-	defer conn.Close()
-	defer runtime.GC()
+func (u *UdpConnsInfo) Relay(buf []byte) error {
 
-	for {
-		u.lock.Lock()
-		conn.SetDeadline(time.Now().Add(time.Second * time.Duration(u.timeout)))
-		u.lock.Unlock()
-		n, err := conn.Read(buf)
-		if err != nil {
-			break
-		}
-		u.lock.Lock()
-		u.SetActiveTime(time.Now())
-		u.lock.Unlock()
-		io.Discard.Write(buf[:n])
+	if time.Now().Unix()-u.ActiveTime().Unix() > int64(u.Timeout()) {
+		return net.ErrClosed
 	}
+	conn := u.conn
+	conn.SetReadDeadline(time.Now().Add(time.Microsecond * time.Duration(1)))
+	n, err := conn.Read(buf)
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return nil
+		}
+		return err
+	}
+	u.lock.Lock()
+	u.SetActiveTime(time.Now())
+	u.lock.Unlock()
+	n, err = io.Discard.Write(buf[:n])
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return nil
+	}
+	return err
 }
 
 type ConnValue struct {

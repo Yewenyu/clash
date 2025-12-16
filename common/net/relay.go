@@ -50,7 +50,7 @@ func Relay(leftConn, rightConn net.Conn, useHttpTimeout bool, useDNSTimeout bool
 }
 
 type ConnsInterface interface {
-	Relay()
+	Relay(buf []byte) error
 	Key() string
 	ActiveTime() time.Time
 	SetActiveTime(time time.Time)
@@ -115,49 +115,39 @@ func (c *ConnsInfo) SetActiveTime(time time.Time) {
 	c.activeTime = time
 }
 
-func (connInfo *ConnsInfo) Relay() {
-	leftConn := connInfo.LeftConn
+func (connInfo *ConnsInfo) Relay(buf []byte) error {
 	rightConn := connInfo.RightConn
-
-	defer func() {
-		rightConn.SetReadDeadline(time.Now())
-		connInfo.Close()
-		// runtime.GC()
-	}()
-	buf := make([]byte, 10)
-	n, err := leftConn.Read(buf)
-	if err != nil {
-		connInfo.Close()
-		return
+	leftConn := connInfo.LeftConn
+	if time.Now().Unix()-connInfo.ActiveTime().Unix() > int64(connInfo.Timeout()) {
+		return net.ErrClosed
 	}
-	rightConn.Write(buf[:n])
-	handle := func(w, r net.Conn) {
-		b := make([]byte, TCPBufferSize)
-	loop:
-		for {
-			connInfo.lock.Lock()
-			connInfo.activeTime = time.Now()
-			timeout := connInfo.Timeout()
-			connInfo.lock.Unlock()
-			// 更新连接时间
-
-			r.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
-			n, err := r.Read(b)
-			if err != nil {
-				break loop
+	handleFunc := func(w, r net.Conn) error {
+		// 更新连接时间
+		r.SetReadDeadline(time.Now().Add(time.Duration(1) * time.Microsecond))
+		n, err := r.Read(buf)
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return nil
 			}
-			_, err = w.Write(b[:n])
-			if err != nil {
-				break loop
-			}
-
+			return err
 		}
+		connInfo.SetActiveTime(time.Now())
+		_, err = w.Write(buf[:n])
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	err := handleFunc(rightConn, leftConn)
+	if err != nil {
+		return err
+	}
+	err = handleFunc(leftConn, rightConn)
+	if err != nil {
+		return err
 	}
 
-	gopool.Go.Submit(func() {
-		handle(rightConn, leftConn)
-	})
-	handle(leftConn, rightConn)
+	return nil
 }
 
 type RunPool struct {
@@ -167,15 +157,12 @@ type RunPool struct {
 	maxConnCount int
 }
 type QueuePool struct {
-	lock           sync.Mutex
-	runPool        *RunPool
-	maxConnCount   int
-	currentCount   int
-	onOnce         sync.Once
-	connChan       chan ConnsInterface
-	connLevel1Chan chan ConnsInterface
-	connLevel2Chan chan ConnsInterface
-	connLevel3Chan chan ConnsInterface
+	lock         sync.Mutex
+	runPool      *RunPool
+	maxConnCount int
+	currentCount int
+	onOnce       sync.Once
+	connChan     chan ConnsInterface
 }
 
 func NewQueuePool(maxConnCount int) *QueuePool {
@@ -186,64 +173,44 @@ func NewQueuePool(maxConnCount int) *QueuePool {
 		maxConnCount: limitCount,
 	}
 	runPool.limit = gopool.NewGoroutinePool(limitCount, func(v ConnsInterface) {
-		runPool.handle(v)
+		// runPool.handle(v)
 	})
 	queuePool := &QueuePool{
-		maxConnCount:   maxConnCount,
-		connChan:       make(chan ConnsInterface, limitCount),
-		connLevel1Chan: make(chan ConnsInterface, limitCount),
-		connLevel2Chan: make(chan ConnsInterface, limitCount),
-		connLevel3Chan: make(chan ConnsInterface, limitCount),
-		runPool:        runPool,
+		maxConnCount: maxConnCount,
+		connChan:     make(chan ConnsInterface, limitCount),
+		runPool:      runPool,
 	}
 	return queuePool
 
 }
 
 func (p *QueuePool) AddConns(connsInfo ConnsInterface) {
-	chanLevel := 0
-	p.lock.Lock()
-	if p.currentCount > p.maxConnCount {
-		p.stopRunPoolConn(p.runPool.maxConnCount, 0)
-		chanLevel = 3
-	} else if p.currentCount > p.maxConnCount/3*2 {
-		p.stopRunPoolConn(p.runPool.maxConnCount, 1)
-		chanLevel = 2
-	} else if p.currentCount > p.maxConnCount/3*1 {
-		p.stopRunPoolConn(p.runPool.maxConnCount/3, 2)
-		chanLevel = 1
-	}
-	p.currentCount++
-	p.lock.Unlock()
-
-	switch chanLevel {
-	case 1:
-		p.connLevel1Chan <- connsInfo
-	case 2:
-		p.connLevel2Chan <- connsInfo
-	case 3:
-		p.connLevel3Chan <- connsInfo
-	default:
-		p.connChan <- connsInfo
-	}
+	p.connChan <- connsInfo
 
 	p.onOnce.Do(func() {
 		go func() {
+			conns := []ConnsInterface{}
+			handleTime := time.Now().UnixMilli()
 			for {
 
-				var connsInfo ConnsInterface
-				select {
-				case connsInfo = <-p.connLevel3Chan:
-				case connsInfo = <-p.connLevel2Chan:
-				case connsInfo = <-p.connLevel1Chan:
-				case connsInfo = <-p.connChan:
+				handle := func(infos []ConnsInterface) {
+					p.runPool.relay(infos)
+					conns = []ConnsInterface{}
+					handleTime = time.Now().UnixMilli()
 				}
-				connsInfo.GetGoPool().Submit(func() {
-					p.runPool.relay(connsInfo)
-				})
-				p.lock.Lock()
-				p.currentCount--
-				p.lock.Unlock()
+				select {
+				case connsInfo = <-p.connChan:
+					conns = append(conns, connsInfo)
+				default:
+					if time.Now().UnixMilli()-handleTime > 100 && len(conns) > 0 {
+						handle(conns)
+					}
+
+				}
+				if len(conns) > 4 {
+					handle(conns)
+				}
+
 			}
 		}()
 
@@ -296,22 +263,25 @@ func (p *RunPool) stopConns(count, timeout int) {
 	}
 
 }
-func (p *RunPool) handle(connInfo ConnsInterface) {
+func (p *RunPool) relay(connInfos []ConnsInterface) {
 
-	p.lock.Lock()
-	p.connsInfos[connInfo.Key()] = connInfo
-	p.lock.Unlock()
+	buf := make([]byte, TCPBufferSize)
 
-	p.relay(connInfo)
-
-	p.lock.Lock()
-	delete(p.connsInfos, connInfo.Key())
-	p.lock.Unlock()
-}
-
-func (p *RunPool) relay(connInfo ConnsInterface) {
-
-	connInfo.Relay()
+	gopool.Go.Submit(func() {
+		for {
+			conns := connInfos
+			if len(conns) == 0 {
+				break
+			}
+			for i, connInfo := range conns {
+				err := connInfo.Relay(buf)
+				if err != nil {
+					connInfo.Close()
+					connInfos = append(connInfos[:i], connInfos[i+1:]...)
+				}
+			}
+		}
+	})
 
 }
 
