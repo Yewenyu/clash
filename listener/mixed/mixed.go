@@ -7,6 +7,7 @@ import (
 	"github.com/Dreamacro/clash/common/cache"
 	N "github.com/Dreamacro/clash/common/net"
 	C "github.com/Dreamacro/clash/constant"
+	gopool "github.com/Dreamacro/clash/goPool"
 	"github.com/Dreamacro/clash/listener/http"
 	"github.com/Dreamacro/clash/listener/socks"
 	"github.com/Dreamacro/clash/transport/socks4"
@@ -86,7 +87,9 @@ func handleConn(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
 	// limLock.Lock()
 	// defer limLock.Unlock()
 	// goLimiter.SubmitTask(mixHandleType{conn: conn, in: in, cache: cache})
-	go handleConn1(conn, in, cache)
+	gopool.Go.Submit(func() {
+		handleConn1(conn, in, cache)
+	})
 }
 func handleConn1(conn net.Conn, in chan<- C.ConnContext, cache *cache.LruCache) {
 	conn.(*net.TCPConn).SetKeepAlive(true)

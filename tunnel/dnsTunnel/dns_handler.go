@@ -12,11 +12,10 @@ import (
 	"sync"
 	"time"
 
+	gopool "github.com/Dreamacro/clash/goPool"
 	"github.com/Dreamacro/clash/log"
 	"github.com/miekg/dns"
 	"golang.org/x/net/proxy"
-
-	gl "github.com/Yewenyu/GoLimiter"
 )
 
 func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string, dohHost []string) {
@@ -92,7 +91,7 @@ func ListenDNS(localAddr, socks5Addr, mode string, cach bool, dnsAddrs []string,
 
 	initTime := time.Now().Unix()
 	dnsCanHandle := true
-	var golimiter = gl.NewGoroutinePool(MaxDnsConnectCount, func(v DNSV) {
+	var golimiter = gopool.NewGoroutinePool(MaxDnsConnectCount, func(v DNSV) {
 		var l sync.Mutex
 		rCount := 0
 		rChan := make(chan []byte, dnsCount)

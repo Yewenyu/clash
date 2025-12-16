@@ -12,7 +12,9 @@ import (
 	N "github.com/Dreamacro/clash/common/net"
 	"github.com/Dreamacro/clash/common/pool"
 	C "github.com/Dreamacro/clash/constant"
+	gopool "github.com/Dreamacro/clash/goPool"
 	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
+	"github.com/alitto/pond/v2"
 )
 
 func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, metadata *C.Metadata) error {
@@ -91,14 +93,16 @@ func (u *udpInfo) Timeout() int {
 func (u *udpInfo) SetTimeout(timeout int) {
 	u.timeout = timeout
 }
+func (u *udpInfo) GetGoPool() pond.Pool {
+	return gopool.SubGo
+}
 
 func (u *udpInfo) Relay() {
 	pc := u.pc
 	oAddr := u.oAddr
 	fAddr := u.fAddr
 	packet := u.packet
-	buf := pool.Get(pool.UDPBufferSize)
-	defer pool.Put(buf)
+	buf := make([]byte, pool.UDPBufferSize)
 	defer u.Close()
 
 	for {

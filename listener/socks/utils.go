@@ -3,7 +3,6 @@ package socks
 import (
 	"net"
 
-	"github.com/Dreamacro/clash/common/pool"
 	"github.com/Dreamacro/clash/transport/socks5"
 )
 
@@ -33,5 +32,5 @@ func (c *packet) LocalAddr() net.Addr {
 }
 
 func (c *packet) Drop() {
-	pool.Put(c.bufRef)
+	// pool.Put(c.bufRef)
 }

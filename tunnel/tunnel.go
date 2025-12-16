@@ -17,6 +17,7 @@ import (
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/constant/provider"
 	icontext "github.com/Dreamacro/clash/context"
+	gopool "github.com/Dreamacro/clash/goPool"
 	"github.com/Dreamacro/clash/log"
 	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
 	"github.com/Dreamacro/clash/tunnel/statistic"
@@ -255,7 +256,9 @@ func handleUDPConn(packet *inbound.PacketAdapter) {
 	handle := func() bool {
 		pc := natTable.Get(key)
 		if pc != nil {
-			go handleUDPToRemote(packet, pc, metadata)
+			gopool.SubGo.Submit(func() {
+				handleUDPToRemote(packet, pc, metadata)
+			})
 			return true
 		}
 		return false
@@ -269,7 +272,7 @@ func handleUDPConn(packet *inbound.PacketAdapter) {
 	lockKey := key + "-lock"
 	cond, loaded := natTable.GetOrCreateLock(lockKey)
 
-	go func() {
+	start := func() {
 		defer packet.Drop()
 
 		if loaded {
@@ -342,15 +345,20 @@ func handleUDPConn(packet *inbound.PacketAdapter) {
 
 		oAddr, _ := netip.AddrFromSlice(metadata.DstIP)
 		oAddr = oAddr.Unmap()
-		go handleUDPToLocal(packet.UDPPacket, pc, key, oAddr, fAddr)
+		gopool.SubGo.Submit(func() {
+			handleUDPToLocal(packet.UDPPacket, pc, key, oAddr, fAddr)
+		})
 
 		natTable.Set(key, pc)
 		handle()
-	}()
+	}
+	gopool.SubGo.Submit(start)
 }
 
 func handleTCPConn(connCtx C.ConnContext) {
-	go handleTCPConn1(connCtx)
+	gopool.Go.Submit(func() {
+		handleTCPConn1(connCtx)
+	})
 }
 
 func handleTCPConn1(connCtx C.ConnContext) {

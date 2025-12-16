@@ -29,8 +29,7 @@ func NewWriter(w io.Writer, aead cipher.AEAD) *Writer { return &Writer{Writer: w
 
 // Write encrypts p and writes to the embedded io.Writer.
 func (w *Writer) Write(p []byte) (n int, err error) {
-	buf := pool.Get(bufSize)
-	defer pool.Put(buf)
+	buf := make([]byte, bufSize)
 	nonce := w.nonce[:w.NonceSize()]
 	tag := w.Overhead()
 	off := 2 + tag
@@ -142,7 +141,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 		if len(p) >= payloadSizeMask+r.Overhead() {
 			return r.read(p)
 		}
-		b := pool.Get(bufSize)
+		b := make([]byte, bufSize)
 		n, err := r.read(b)
 		if err != nil {
 			return 0, err
@@ -154,7 +153,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 	n := copy(p, r.buf[r.off:])
 	r.off += n
 	if r.off == len(r.buf) {
-		pool.Put(r.buf[:cap(r.buf)])
+
 		r.buf = nil
 	}
 	return n, nil

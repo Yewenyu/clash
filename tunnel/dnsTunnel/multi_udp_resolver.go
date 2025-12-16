@@ -12,6 +12,7 @@ import (
 
 	"github.com/Dreamacro/clash/component/resolver"
 	"github.com/Dreamacro/clash/log"
+	"github.com/alitto/pond/v2"
 	"github.com/miekg/dns"
 )
 
@@ -22,6 +23,7 @@ type UDPResolver struct {
 	timeout       time.Duration    // 单次查询超时时间
 	roundRobinIdx int              // 轮询策略当前索引
 	socks5Addr    string           // SOCKS5代理地址（可选）
+	dnsGoPool     pond.Pool        // 用于并发DNS查询的goroutine池
 }
 
 // ResolverConfig 解析器配置
@@ -182,6 +184,7 @@ func NewUDPResolver(cfg ResolverConfig) (*UDPResolver, error) {
 		timeout:       cfg.Timeout,
 		roundRobinIdx: 0,
 		socks5Addr:    cfg.SOCKS5Proxy,
+		dnsGoPool:     pond.NewPool(20),
 	}, nil
 }
 
@@ -269,7 +272,7 @@ func (r *UDPResolver) concurrentExchange(ctx context.Context, m *dns.Msg) (*dns.
 			dnsC.ttl = time.Now().Unix() + int64(resp.Answer[0].Header().Ttl)
 			dnsCach[m.Question[0].Name] = dnsC
 
-			go func() {
+			r.dnsGoPool.Submit(func() {
 			loop:
 				for {
 					select {
@@ -281,7 +284,7 @@ func (r *UDPResolver) concurrentExchange(ctx context.Context, m *dns.Msg) (*dns.
 					}
 				}
 
-			}()
+			})
 		} else {
 			delete(dnsCach, m.Question[0].Name)
 		}
@@ -369,9 +372,9 @@ func (r *UDPResolver) query(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
 	}
 
 	for i, conn := range r.connections {
-		go func(idx int, connection *UDPConnection) {
+		r.dnsGoPool.Submit(func() {
 			bytes, _ := m.Pack()
-			dnsAddr := r.serverAddrs[idx]
+			dnsAddr := r.serverAddrs[i]
 			info := &DNSInfo{
 				remoteAddr: dnsAddr,
 				bytes:      bytes,
@@ -385,9 +388,9 @@ func (r *UDPResolver) query(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
 					respChan <- newMsg
 				},
 			}
-			connection.sendChan <- info
+			conn.sendChan <- info
 
-		}(i, conn)
+		})
 
 		// go func(dnsAddr string) {
 		// 	queryByts, _ := m.Pack()

@@ -12,9 +12,11 @@ import (
 	N "github.com/Dreamacro/clash/common/net"
 	"github.com/Dreamacro/clash/common/pool"
 	C "github.com/Dreamacro/clash/constant"
+	gopool "github.com/Dreamacro/clash/goPool"
 	authStore "github.com/Dreamacro/clash/listener/auth"
 	"github.com/Dreamacro/clash/transport/socks4"
 	"github.com/Dreamacro/clash/transport/socks5"
+	"github.com/alitto/pond/v2"
 )
 
 type Listener struct {
@@ -131,6 +133,9 @@ func (u *UdpConnsInfo) Key() string {
 	return u.key
 }
 
+func (u *UdpConnsInfo) GetGoPool() pond.Pool {
+	return gopool.SubGo
+}
 func (u *UdpConnsInfo) SetActiveTime(time time.Time) {
 	u.activeTime = time
 }
@@ -161,9 +166,8 @@ func (u *UdpConnsInfo) SetTimeout(timeout int) {
 }
 
 func (u *UdpConnsInfo) Relay() {
-	buf := pool.Get(pool.UDPBufferSize)
+	buf := make([]byte, pool.UDPBufferSize)
 	conn := u.conn
-	defer pool.Put(buf)
 	defer conn.Close()
 	defer runtime.GC()
 
@@ -270,7 +274,7 @@ func (w *WaitQueue) handle() {
 					break
 				}
 			}
-			runtime.GC()
+			// runtime.GC()
 		}
 	}()
 

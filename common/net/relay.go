@@ -2,14 +2,13 @@ package net
 
 import (
 	"net"
-	"runtime"
 	"sort"
 	"sync"
 	"time"
 
 	connmanager "github.com/Dreamacro/clash/common/connManager"
-	"github.com/Dreamacro/clash/common/pool"
-	gl "github.com/Yewenyu/GoLimiter"
+	gopool "github.com/Dreamacro/clash/goPool"
+	"github.com/alitto/pond/v2"
 )
 
 var (
@@ -61,6 +60,7 @@ type ConnsInterface interface {
 	Lock() *sync.Mutex
 	IsStop() bool
 	Close()
+	GetGoPool() pond.Pool
 }
 type ConnsInfo struct {
 	LeftConn, RightConn net.Conn
@@ -108,6 +108,9 @@ func (c *ConnsInfo) Close() {
 		c.RightConn = nil
 	}
 }
+func (c *ConnsInfo) GetGoPool() pond.Pool {
+	return gopool.Go
+}
 func (c *ConnsInfo) SetActiveTime(time time.Time) {
 	c.activeTime = time
 }
@@ -119,7 +122,7 @@ func (connInfo *ConnsInfo) Relay() {
 	defer func() {
 		rightConn.SetReadDeadline(time.Now())
 		connInfo.Close()
-		runtime.GC()
+		// runtime.GC()
 	}()
 	buf := make([]byte, 10)
 	n, err := leftConn.Read(buf)
@@ -129,8 +132,7 @@ func (connInfo *ConnsInfo) Relay() {
 	}
 	rightConn.Write(buf[:n])
 	handle := func(w, r net.Conn) {
-		b := pool.Get(TCPBufferSize)
-		defer pool.Put(b)
+		b := make([]byte, TCPBufferSize)
 	loop:
 		for {
 			connInfo.lock.Lock()
@@ -151,14 +153,17 @@ func (connInfo *ConnsInfo) Relay() {
 
 		}
 	}
-	go handle(rightConn, leftConn)
+
+	gopool.Go.Submit(func() {
+		handle(rightConn, leftConn)
+	})
 	handle(leftConn, rightConn)
 }
 
 type RunPool struct {
 	connsInfos   map[string]ConnsInterface
 	lock         sync.Mutex
-	limit        *gl.GoroutinePool[ConnsInterface]
+	limit        *gopool.GoroutinePool[ConnsInterface]
 	maxConnCount int
 }
 type QueuePool struct {
@@ -180,7 +185,7 @@ func NewQueuePool(maxConnCount int) *QueuePool {
 		connsInfos:   make(map[string]ConnsInterface),
 		maxConnCount: limitCount,
 	}
-	runPool.limit = gl.NewGoroutinePool(limitCount, func(v ConnsInterface) {
+	runPool.limit = gopool.NewGoroutinePool(limitCount, func(v ConnsInterface) {
 		runPool.handle(v)
 	})
 	queuePool := &QueuePool{
@@ -233,11 +238,9 @@ func (p *QueuePool) AddConns(connsInfo ConnsInterface) {
 				case connsInfo = <-p.connLevel1Chan:
 				case connsInfo = <-p.connChan:
 				}
-				if connsInfo.IsDns() {
-					go p.runPool.relay(connsInfo)
-				} else {
-					p.runPool.limit.SubmitTask(connsInfo)
-				}
+				connsInfo.GetGoPool().Submit(func() {
+					p.runPool.relay(connsInfo)
+				})
 				p.lock.Lock()
 				p.currentCount--
 				p.lock.Unlock()

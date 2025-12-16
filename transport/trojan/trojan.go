@@ -13,12 +13,12 @@ import (
 	"sync"
 
 	N "github.com/Dreamacro/clash/common/net"
+	"github.com/Dreamacro/clash/common/pool"
 	"github.com/Dreamacro/clash/component/ca"
 	tlsC "github.com/Dreamacro/clash/component/tls"
+	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/transport/socks5"
 	vmessMC "github.com/Dreamacro/clash/transport/vmess"
-	"github.com/Dreamacro/clash/common/pool"
-	C "github.com/Dreamacro/clash/constant"
 )
 
 const (
@@ -307,7 +307,7 @@ func (pc *PacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, er
 	}
 	addr = destination.UDPAddr()
 
-	data = pool.Get(pool.UDPBufferSize)
+	data = make([]byte, pool.UDPBufferSize)
 	put = func() {
 		_ = pool.Put(data)
 	}

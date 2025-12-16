@@ -48,11 +48,11 @@ func NewUDP(addr string, in chan<- *inbound.PacketAdapter) (C.Listener, error) {
 		addr:       addr,
 	}
 	go func() {
+		buf := make([]byte, pool.UDPBufferSize)
 		for {
-			buf := pool.Get(pool.UDPBufferSize)
+
 			n, remoteAddr, err := l.ReadFrom(buf)
 			if err != nil {
-				pool.Put(buf)
 				if sl.closed {
 					break
 				}
@@ -69,7 +69,6 @@ func handleSocksUDP(pc net.PacketConn, in chan<- *inbound.PacketAdapter, buf []b
 	target, payload, err := socks5.DecodeUDPPacket(buf)
 	if err != nil {
 		// Unresolved UDP packet, return buffer to the pool
-		pool.Put(buf)
 		return
 	}
 	packet := &packet{
