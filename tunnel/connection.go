@@ -111,6 +111,7 @@ func (u *udpInfo) Relay(buf []byte) error {
 		}
 		return err
 	}
+	u.SetActiveTime(time.Now())
 
 	fromUDPAddr := *from.(*net.UDPAddr)
 	if fAddr.IsValid() {
@@ -133,7 +134,7 @@ func (u *udpInfo) Relay(buf []byte) error {
 func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, fAddr netip.Addr) {
 	udpLock.Lock()
 	if udpQueuePool == nil {
-		udpQueuePool = gopool.NewQueuePool(5, 10, pool.UDPBufferSize, N.UdpTimeOut, 2000, 1)
+		udpQueuePool = gopool.NewQueuePool(10, 10, pool.UDPBufferSize, 2000, N.UdpTimeOut, 1)
 	}
 	udpLock.Unlock()
 	info := udpInfo{

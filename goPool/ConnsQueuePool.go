@@ -30,7 +30,7 @@ func NewQueuePool(maxConnCount, maxGo, bufSize, activeTimeout, clearTime int, de
 
 	queuePool := &ConnsQueuePool{
 		maxConnCount:  maxConnCount,
-		connChan:      make(chan ConnsQueuePoolInterface, 10),
+		connChan:      make(chan ConnsQueuePoolInterface, maxGo),
 		bufSize:       bufSize,
 		maxGo:         maxGo,
 		deadTimeout:   deadTimeout,
@@ -45,44 +45,63 @@ func (p *ConnsQueuePool) AddConns(connsInfo ConnsQueuePoolInterface) {
 	p.connChan <- connsInfo
 
 	p.onOnce.Do(func() {
-		for range p.maxGo {
+		for i := 0; i < p.maxGo; i++ {
 			go func() {
 				buf := make([]byte, p.bufSize)
+				timer := time.NewTimer(100 * time.Millisecond)
+				defer timer.Stop()
 				for {
 					conns := []ConnsQueuePoolInterface{}
-
 					lastClearTime := time.Now()
+
 					for {
-						connsInfo = <-p.connChan
-						conns = append(conns, connsInfo)
-						// defer runtime.GC()
+						timer.Reset(100 * time.Millisecond)
+						select {
+						case info := <-p.connChan:
+							conns = append(conns, info)
+						case <-timer.C:
+							if len(conns) == 0 {
+								continue
+							}
+						}
+
 						for {
 							nextConns := make([]ConnsQueuePoolInterface, 0)
-							for _, connInfo := range conns {
-								if connInfo.IsStop() {
+							for _, info := range conns {
+								if info.IsStop() {
 									continue
 								}
-								if time.Now().UnixMilli()-connInfo.ActiveTime().UnixMilli() > int64(p.activeTimeout) {
-									connInfo.Close()
+								if time.Now().UnixMilli()-info.ActiveTime().UnixMilli() > int64(p.activeTimeout) {
+									info.Close()
 									continue
 								}
-								connInfo.SetDeadline(time.Now().Add(p.deadTimeout * time.Microsecond))
-								err := connInfo.Relay(buf)
+								info.SetDeadline(time.Now().Add(p.deadTimeout * time.Microsecond))
+								err := info.Relay(buf)
 								if err != nil {
-									connInfo.Close()
+									info.Close()
 								} else {
-									nextConns = append(nextConns, connInfo)
+									nextConns = append(nextConns, info)
 								}
 							}
 							conns = nextConns
-							if (len(conns) < 2 && len(p.connChan) > 0) || len(conns) == 0 {
+							if len(conns) < p.maxConnCount/2 {
+								if len(conns) == 0 {
+									break
+								}
+								if len(p.connChan) > 0 {
+									break
+								}
 								break
 							}
 							if time.Now().UnixMilli()-lastClearTime.UnixMilli() > int64(p.clearTime) && len(p.connChan) > 30 {
 								lastClearTime = time.Now()
-								sort.SliceIsSorted(conns, func(i, j int) bool {
+								sort.Slice(conns, func(i, j int) bool {
 									return conns[i].ActiveTime().UnixMilli() < conns[j].ActiveTime().UnixMilli()
 								})
+								deleteConns := conns[len(conns)/2:]
+								for _, info := range deleteConns {
+									info.Close()
+								}
 								conns = conns[:len(conns)/2]
 								break
 							}

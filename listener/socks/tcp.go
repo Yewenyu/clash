@@ -101,7 +101,7 @@ func HandleSocks5(conn net.Conn, in chan<- C.ConnContext) {
 	if command == socks5.CmdUDPAssociate {
 		udpLock.Lock()
 		if udpQueuePool == nil {
-			udpQueuePool = N.NewQueuePool(20)
+			udpQueuePool = N.NewQueuePool(50)
 		}
 		udpLock.Unlock()
 		udpQueuePool.AddConns(&UdpConnsInfo{

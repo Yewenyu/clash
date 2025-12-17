@@ -252,7 +252,7 @@ func (p *QueuePool) AddConns(connsInfo ConnsInterface) {
 					chanlen = len(p.connLevel1Chan)
 				case connsInfo = <-p.connChan:
 				}
-				if chanlen == 0 && level != 0 {
+				if chanlen > p.runPool.maxConnCount/4 && level != 0 {
 					timeout := 0
 					deleteCount := p.runPool.maxConnCount
 					switch level {
