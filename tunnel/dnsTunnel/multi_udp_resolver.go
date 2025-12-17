@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Dreamacro/clash/component/resolver"
+	gopool "github.com/Dreamacro/clash/goPool"
 	"github.com/Dreamacro/clash/log"
 	"github.com/miekg/dns"
 )
@@ -269,7 +270,7 @@ func (r *UDPResolver) concurrentExchange(ctx context.Context, m *dns.Msg) (*dns.
 			dnsC.ttl = time.Now().Unix() + int64(resp.Answer[0].Header().Ttl)
 			dnsCach[m.Question[0].Name] = dnsC
 
-			go func() {
+			gopool.Go.Submit(func() {
 			loop:
 				for {
 					select {
@@ -281,7 +282,7 @@ func (r *UDPResolver) concurrentExchange(ctx context.Context, m *dns.Msg) (*dns.
 					}
 				}
 
-			}()
+			})
 		} else {
 			delete(dnsCach, m.Question[0].Name)
 		}
@@ -369,9 +370,9 @@ func (r *UDPResolver) query(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
 	}
 
 	for i, conn := range r.connections {
-		go func(idx int, connection *UDPConnection) {
+		gopool.Go.Submit(func() {
 			bytes, _ := m.Pack()
-			dnsAddr := r.serverAddrs[idx]
+			dnsAddr := r.serverAddrs[i]
 			info := &DNSInfo{
 				remoteAddr: dnsAddr,
 				bytes:      bytes,
@@ -385,9 +386,9 @@ func (r *UDPResolver) query(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
 					respChan <- newMsg
 				},
 			}
-			connection.sendChan <- info
+			conn.sendChan <- info
 
-		}(i, conn)
+		})
 
 		// go func(dnsAddr string) {
 		// 	queryByts, _ := m.Pack()

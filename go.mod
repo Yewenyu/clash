@@ -20,7 +20,7 @@ require (
 	github.com/oschwald/geoip2-golang v1.9.0
 	github.com/samber/lo v1.38.1
 	github.com/sirupsen/logrus v1.9.3
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/vishvananda/netlink v1.2.1-beta.2.0.20230420174744-55c8b9515a01
 	go.etcd.io/bbolt v1.3.7
 	go.uber.org/atomic v1.11.0
@@ -45,12 +45,10 @@ require (
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/oasisprotocol/deoxysii v0.0.0-20220228165953-2091330c22b7 // indirect
-	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/sina-ghaderi/poly1305 v0.0.0-20220724002748-c5926b03988b // indirect
 	github.com/sina-ghaderi/rabaead v0.0.0-20220730151906-ab6e06b96e8c // indirect
 	github.com/sina-ghaderi/rabbitio v0.0.0-20220730151941-9ce26f4f872e // indirect
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
-	golang.org/x/mobile v0.0.0-20250711185624-d5bb5ecc55c0 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )
 
@@ -70,6 +68,7 @@ require (
 	github.com/metacubex/utls v1.6.6
 	github.com/mroth/weightedrand/v2 v2.1.0
 	github.com/oschwald/maxminddb-golang v1.11.0 // indirect
+	github.com/panjf2000/ants/v2 v2.11.3
 	github.com/pierrec/lz4/v4 v4.1.14 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sagernet/sing v0.2.19-0.20231207034108-445cd4f41e3f

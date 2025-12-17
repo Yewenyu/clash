@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/Dreamacro/clash/adapter/inbound"
-	connmanager "github.com/Dreamacro/clash/common/connManager"
 	N "github.com/Dreamacro/clash/common/net"
 	"github.com/Dreamacro/clash/common/pool"
 	C "github.com/Dreamacro/clash/constant"
@@ -102,7 +101,7 @@ func HandleSocks5(conn net.Conn, in chan<- C.ConnContext) {
 	if command == socks5.CmdUDPAssociate {
 		udpLock.Lock()
 		if udpQueuePool == nil {
-			udpQueuePool = N.NewQueuePool(connmanager.TCPMaxCount)
+			udpQueuePool = N.NewQueuePool(20)
 		}
 		udpLock.Unlock()
 		udpQueuePool.AddConns(&UdpConnsInfo{
@@ -169,7 +168,7 @@ func (u *UdpConnsInfo) Relay() {
 
 	for {
 		u.lock.Lock()
-		conn.SetDeadline(time.Now().Add(time.Second * time.Duration(u.timeout)))
+		conn.SetDeadline(time.Now().Add(time.Millisecond * time.Duration(300)))
 		u.lock.Unlock()
 		n, err := conn.Read(buf)
 		if err != nil {

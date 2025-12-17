@@ -9,6 +9,7 @@ import (
 
 	connmanager "github.com/Dreamacro/clash/common/connManager"
 	"github.com/Dreamacro/clash/common/pool"
+	gopool "github.com/Dreamacro/clash/goPool"
 	gl "github.com/Yewenyu/GoLimiter"
 )
 
@@ -75,16 +76,24 @@ func (c *ConnsInfo) Key() string {
 	return c.key
 }
 func (c *ConnsInfo) ActiveTime() time.Time {
-	return c.activeTime
+	c.lock.Lock()
+	aTime := c.activeTime
+	c.lock.Unlock()
+	return aTime
 }
 func (c *ConnsInfo) Lock() *sync.Mutex {
 	return &c.lock
 }
 func (c *ConnsInfo) Timeout() int {
-	return c.timeout
+	c.lock.Lock()
+	timeout := c.timeout
+	c.lock.Unlock()
+	return timeout
 }
 
 func (c *ConnsInfo) SetTimeout(timeout int) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	c.timeout = timeout
 	c.LeftConn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 	c.RightConn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
@@ -94,7 +103,10 @@ func (c *ConnsInfo) IsDns() bool {
 	return c.isDns
 }
 func (c *ConnsInfo) IsStop() bool {
-	return c.LeftConn == nil || c.RightConn == nil
+	c.lock.Lock()
+	isStop := c.LeftConn == nil || c.RightConn == nil
+	c.lock.Unlock()
+	return isStop
 }
 func (c *ConnsInfo) Close() {
 	c.lock.Lock()
@@ -109,6 +121,8 @@ func (c *ConnsInfo) Close() {
 	}
 }
 func (c *ConnsInfo) SetActiveTime(time time.Time) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	c.activeTime = time
 }
 
@@ -133,10 +147,9 @@ func (connInfo *ConnsInfo) Relay() {
 		defer pool.Put(b)
 	loop:
 		for {
-			connInfo.lock.Lock()
-			connInfo.activeTime = time.Now()
+
+			connInfo.SetActiveTime(time.Now())
 			timeout := connInfo.Timeout()
-			connInfo.lock.Unlock()
 			// 更新连接时间
 
 			r.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
@@ -151,7 +164,9 @@ func (connInfo *ConnsInfo) Relay() {
 
 		}
 	}
-	go handle(rightConn, leftConn)
+	gopool.Go.Submit(func() {
+		handle(rightConn, leftConn)
+	})
 	handle(leftConn, rightConn)
 }
 
@@ -199,13 +214,10 @@ func (p *QueuePool) AddConns(connsInfo ConnsInterface) {
 	chanLevel := 0
 	p.lock.Lock()
 	if p.currentCount > p.maxConnCount {
-		p.stopRunPoolConn(p.runPool.maxConnCount, 0)
 		chanLevel = 3
 	} else if p.currentCount > p.maxConnCount/3*2 {
-		p.stopRunPoolConn(p.runPool.maxConnCount, 1)
 		chanLevel = 2
 	} else if p.currentCount > p.maxConnCount/3*1 {
-		p.stopRunPoolConn(p.runPool.maxConnCount/3, 2)
 		chanLevel = 1
 	}
 	p.currentCount++
@@ -225,16 +237,38 @@ func (p *QueuePool) AddConns(connsInfo ConnsInterface) {
 	p.onOnce.Do(func() {
 		go func() {
 			for {
-
+				var level = 0
 				var connsInfo ConnsInterface
+				chanlen := 0
 				select {
 				case connsInfo = <-p.connLevel3Chan:
+					level = 3
+					chanlen = len(p.connLevel3Chan)
 				case connsInfo = <-p.connLevel2Chan:
+					level = 2
+					chanlen = len(p.connLevel2Chan)
 				case connsInfo = <-p.connLevel1Chan:
+					level = 1
+					chanlen = len(p.connLevel1Chan)
 				case connsInfo = <-p.connChan:
 				}
+				if chanlen == 0 && level != 0 {
+					timeout := 0
+					deleteCount := p.runPool.maxConnCount
+					switch level {
+					case 2:
+						timeout = 1
+					case 1:
+						timeout = 2
+						deleteCount = p.runPool.maxConnCount / 3
+					}
+					p.stopRunPoolConn(deleteCount, timeout)
+				}
+
 				if connsInfo.IsDns() {
-					go p.runPool.relay(connsInfo)
+					gopool.Go.Submit(func() {
+						p.runPool.relay(connsInfo)
+					})
 				} else {
 					p.runPool.limit.SubmitTask(connsInfo)
 				}
@@ -278,9 +312,6 @@ func (p *RunPool) stopConns(count, timeout int) {
 			continue
 		}
 		delete(p.connsInfos, connsInfo.Key())
-		lock := connsInfo.Lock()
-		lock.Lock()
-		defer lock.Unlock()
 		if connsInfo.IsStop() {
 			continue
 		}

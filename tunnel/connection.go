@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	connmanager "github.com/Dreamacro/clash/common/connManager"
 	N "github.com/Dreamacro/clash/common/net"
 	"github.com/Dreamacro/clash/common/pool"
 	C "github.com/Dreamacro/clash/constant"
+	gopool "github.com/Dreamacro/clash/goPool"
 	dnstunnel "github.com/Dreamacro/clash/tunnel/dnsTunnel"
 )
 
@@ -45,7 +45,7 @@ func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, metadata *C.Metadata
 }
 
 var udpLock sync.Mutex
-var udpQueuePool *N.QueuePool
+var udpQueuePool *gopool.ConnsQueuePool
 
 type udpInfo struct {
 	packet       C.UDPPacket
@@ -82,6 +82,9 @@ func (u *udpInfo) IsStop() bool {
 
 func (u *udpInfo) Close() {
 	natTable.Delete(u.key)
+	if u.stop {
+		return
+	}
 	u.pc.Close()
 	u.stop = true
 }
@@ -91,50 +94,46 @@ func (u *udpInfo) Timeout() int {
 func (u *udpInfo) SetTimeout(timeout int) {
 	u.timeout = timeout
 }
+func (u *udpInfo) SetDeadline(t time.Time) {
+	u.pc.SetReadDeadline(t)
+}
 
-func (u *udpInfo) Relay() {
+func (u *udpInfo) Relay(buf []byte) error {
 	pc := u.pc
 	oAddr := u.oAddr
 	fAddr := u.fAddr
 	packet := u.packet
-	buf := pool.Get(pool.UDPBufferSize)
-	defer pool.Put(buf)
-	defer u.Close()
 
-	for {
-		u.lock.Lock()
-		pc.SetReadDeadline(time.Now().Add(time.Duration(u.timeout) * time.Second))
-		u.lock.Unlock()
-		n, from, err := pc.ReadFrom(buf)
-		if err != nil {
-			return
+	n, from, err := pc.ReadFrom(buf)
+	if err != nil {
+		if timeoutErr, ok := err.(net.Error); ok && timeoutErr.Timeout() {
+			return nil
 		}
+		return err
+	}
 
-		fromUDPAddr := *from.(*net.UDPAddr)
-		if fAddr.IsValid() {
-			fromAddr, _ := netip.AddrFromSlice(fromUDPAddr.IP)
-			fromAddr = fromAddr.Unmap()
-			if oAddr == fromAddr {
-				fromUDPAddr.IP = fAddr.AsSlice()
-			}
-		}
-		if strings.Contains(from.String(), "53") && !dnstunnel.Out_tRule.IsHttpEnable {
-			bytes := buf[:n]
-			dnstunnel.Out_tRule.HandleDnsWithChan(bytes)
-
-		}
-
-		_, err = packet.WriteBack(buf[:n], &fromUDPAddr)
-		if err != nil {
-			return
+	fromUDPAddr := *from.(*net.UDPAddr)
+	if fAddr.IsValid() {
+		fromAddr, _ := netip.AddrFromSlice(fromUDPAddr.IP)
+		fromAddr = fromAddr.Unmap()
+		if oAddr == fromAddr {
+			fromUDPAddr.IP = fAddr.AsSlice()
 		}
 	}
+	if strings.Contains(from.String(), "53") && !dnstunnel.Out_tRule.IsHttpEnable {
+		bytes := buf[:n]
+		dnstunnel.Out_tRule.HandleDnsWithChan(bytes)
+
+	}
+
+	_, err = packet.WriteBack(buf[:n], &fromUDPAddr)
+	return nil
 }
 
 func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, oAddr, fAddr netip.Addr) {
 	udpLock.Lock()
 	if udpQueuePool == nil {
-		udpQueuePool = N.NewQueuePool(connmanager.TCPMaxCount)
+		udpQueuePool = gopool.NewQueuePool(5, 10, pool.UDPBufferSize, N.UdpTimeOut, 2000, 1)
 	}
 	udpLock.Unlock()
 	info := udpInfo{
