@@ -3,7 +3,6 @@ package net
 import (
 	"net"
 	"runtime"
-	"sort"
 	"sync"
 	"time"
 
@@ -235,63 +234,57 @@ func (p *QueuePool) AddConns(connsInfo ConnsInterface) {
 	}
 
 	p.onOnce.Do(func() {
-		go func() {
-			for {
-				var level = 0
-				var connsInfo ConnsInterface
-				chanlen := 0
-				select {
-				case connsInfo = <-p.connLevel3Chan:
-					level = 3
-					chanlen = len(p.connLevel3Chan)
-				case connsInfo = <-p.connLevel2Chan:
-					level = 2
-					chanlen = len(p.connLevel2Chan)
-				case connsInfo = <-p.connLevel1Chan:
-					level = 1
-					chanlen = len(p.connLevel1Chan)
-				case connsInfo = <-p.connChan:
-				}
-				if chanlen > p.runPool.maxConnCount/4 && level != 0 {
-					timeout := 0
-					deleteCount := p.runPool.maxConnCount
-					switch level {
-					case 2:
-						timeout = 1
-					case 1:
-						timeout = 2
-						deleteCount = p.runPool.maxConnCount / 3
+		for i := 0; i < 3; i++ {
+			go func() {
+				for {
+					var level = 0
+					var connsInfo ConnsInterface
+
+					select {
+					case connsInfo = <-p.connLevel3Chan:
+						level = 3
+
+					case connsInfo = <-p.connLevel2Chan:
+						level = 2
+
+					case connsInfo = <-p.connLevel1Chan:
+						level = 1
+					case connsInfo = <-p.connChan:
 					}
-					p.stopRunPoolConn(deleteCount, timeout)
-				}
+					if level != 0 {
+						timeout := 0
+						switch level {
+						case 2:
+							timeout = 1
+						case 1:
+							timeout = 2
+						}
+						p.runPool.stopFirstConns(timeout)
+					}
 
-				if connsInfo.IsDns() {
-					gopool.Go.Submit(func() {
-						p.runPool.relay(connsInfo)
-					})
-				} else {
-					p.runPool.limit.SubmitTask(connsInfo)
+					if connsInfo.IsDns() {
+						gopool.Go.Submit(func() {
+							p.runPool.relay(connsInfo)
+						})
+					} else {
+						p.runPool.limit.SubmitTask(connsInfo)
+					}
+					p.lock.Lock()
+					p.currentCount--
+					p.lock.Unlock()
 				}
-				p.lock.Lock()
-				p.currentCount--
-				p.lock.Unlock()
-			}
-		}()
-
+			}()
+		}
 	})
 
 }
 
-func (p *QueuePool) stopRunPoolConn(count, timeout int) {
-	p.runPool.stopConns(count, timeout)
-}
-
-func (p *RunPool) stopConns(count, timeout int) {
+func (p *RunPool) stopFirstConns(timeout int) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	//停止活跃度低的连接
 
-	if len(p.connsInfos) < count {
+	if len(p.connsInfos) == 0 {
 		return
 	}
 
@@ -299,28 +292,18 @@ func (p *RunPool) stopConns(count, timeout int) {
 	for _, connsInfo := range p.connsInfos {
 		stopCons = append(stopCons, connsInfo)
 	}
-
-	if len(stopCons) > count {
-		conns := stopCons
-		sort.Slice(conns, func(i, j int) bool {
-			return conns[i].ActiveTime().Before(conns[j].ActiveTime())
-		})
-		stopCons = conns[:count]
+	conns := stopCons[0]
+	if conns.IsDns() {
+		return
 	}
-	for _, connsInfo := range stopCons {
-		if connsInfo.IsDns() {
-			continue
-		}
-		delete(p.connsInfos, connsInfo.Key())
-		if connsInfo.IsStop() {
-			continue
-		}
-		if timeout == 0 {
-			connsInfo.Close()
-			continue
-		}
-
-		connsInfo.SetTimeout(timeout)
+	if conns.IsStop() {
+		return
+	}
+	if timeout > 0 {
+		conns.SetTimeout(timeout)
+	} else {
+		conns.Close()
+		delete(p.connsInfos, conns.Key())
 	}
 
 }
